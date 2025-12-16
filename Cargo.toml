@@ -30,17 +30,16 @@ include = [
 ]
 
 [dependencies]
-lowess = "0.4"
+lowess = { version = "0.4", features = ["dev"] }
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
 ndarray = { version = "0.17.1", default-features = false }
-rayon = { version = "1.11", optional = true }
+rayon = { version = "1.11" }
 
 [dev-dependencies]
 approx = "0.5"
 
 [features]
-default = ["parallel"]
-parallel = ["dep:rayon", "ndarray/rayon"]
+default = []
 dev = []
 
 [profile.release]
