@@ -86,7 +86,6 @@
 //! * This adapter requires chunks to be provided in stream order.
 
 use crate::engine::executor::smooth_pass_parallel;
-use crate::input::LowessInput;
 
 use lowess::internals::adapters::streaming::{StreamingLowess, StreamingLowessBuilder};
 use lowess::internals::engine::output::LowessResult;
@@ -230,35 +229,6 @@ pub struct ExtendedStreamingLowess<T: Float> {
 }
 
 impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowess<T> {
-    /// Perform LOWESS smoothing on the provided data as a single chunk.
-    ///
-    /// Convenience method for processing complete datasets. For true
-    /// streaming with multiple chunks, use `process_chunk()` instead.
-    ///
-    /// # Parameters
-    ///
-    /// * `x` - Independent variable values
-    /// * `y` - Dependent variable values (must have same length as x)
-    ///
-    /// # Returns
-    ///
-    /// `LowessResult` containing smoothed values and optional residuals.
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if input validation fails.
-    pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
-    where
-        I1: LowessInput<T> + ?Sized,
-        I2: LowessInput<T> + ?Sized,
-    {
-        let x_slice = x.as_lowess_slice()?;
-        let y_slice = y.as_lowess_slice()?;
-
-        let mut me = self;
-        me.processor.process_chunk(x_slice, y_slice)
-    }
-
     /// Process a chunk of data.
     ///
     /// Call this method repeatedly with sequential chunks of data for true

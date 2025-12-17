@@ -922,23 +922,46 @@
 //!
 //! ### Streaming Adapter
 //!
-//! Process large datasets in chunks with configurable overlap.
+//! Process large datasets in chunks with configurable overlap. Use `process_chunk()`
+//! to process each chunk and `finalize()` to get remaining buffered data.
 //! Uses parallel execution by default.
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
 //!
-//! let x: Vec<f64> = (1..=1000).map(|i| i as f64).collect();
-//! let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
+//! // Simulate chunks of data (in practice, read from file/stream)
+//! let chunk1_x: Vec<f64> = (0..50).map(|i| i as f64).collect();
+//! let chunk1_y: Vec<f64> = chunk1_x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
 //!
-//! // Build model with streaming adapter
-//! let model = Lowess::new()
-//!     .fraction(0.1)
+//! let chunk2_x: Vec<f64> = (40..100).map(|i| i as f64).collect();
+//! let chunk2_y: Vec<f64> = chunk2_x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
+//!
+//! // Build streaming processor with chunk configuration
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
 //!     .iterations(2)
 //!     .adapter(Streaming)
-//!     .parallel(true)  // Parallel streaming (default)
+//!     .chunk_size(50)   // Process 50 points at a time
+//!     .overlap(10)      // 10 points overlap between chunks
+//!     .parallel(true)   // Parallel streaming (default)
 //!     .build()
 //!     .unwrap();
+//!
+//! // Process first chunk
+//! let result1 = processor.process_chunk(&chunk1_x, &chunk1_y).unwrap();
+//! // result1.y contains smoothed values for the non-overlapping portion
+//!
+//! // Process second chunk (overlaps with end of first chunk)
+//! let result2 = processor.process_chunk(&chunk2_x, &chunk2_y).unwrap();
+//! // result2.y contains smoothed values, with overlap merged from first chunk
+//!
+//! // IMPORTANT: Call finalize() to get remaining buffered overlap data
+//! let final_result = processor.finalize().unwrap();
+//! // final_result.y contains the final overlap buffer
+//!
+//! // Total processed = all chunks + finalize
+//! let total = result1.y.len() + result2.y.len() + final_result.y.len();
+//! println!("Processed {} points total", total);
 //! ```
 //!
 //! **Use streaming when:**
