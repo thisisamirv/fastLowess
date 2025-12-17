@@ -4,9 +4,10 @@
 //! - Parallel execution using `rayon`
 //! - Sequential fallback
 //! - `ndarray` integration
+//! - Cross-validation for automatic parameter selection
 //! - Performance comparison (simulated)
 
-use fastLowess::{Adapter::Batch, Lowess, Result, RobustnessMethod};
+use fastLowess::{Adapter::Batch, CrossValidationStrategy, Lowess, Result, RobustnessMethod};
 use ndarray::Array1;
 use std::time::Instant;
 
@@ -20,6 +21,7 @@ fn main() -> Result<()> {
     example_2_sequential_fallback()?;
     example_3_ndarray_integration()?;
     example_4_robust_parallel()?;
+    example_5_cross_validation()?;
 
     Ok(())
 }
@@ -150,6 +152,63 @@ fn example_4_robust_parallel() -> Result<()> {
         let outliers = weights.iter().filter(|&&w| w < 0.1).count();
         println!("Identified {} potential outliers (weight < 0.1)", outliers);
     }
+
+    println!();
+    Ok(())
+}
+
+/// Example 5: Cross-Validation for Parameter Selection
+/// Automatic selection of optimal smoothing fraction using parallel CV
+fn example_5_cross_validation() -> Result<()> {
+    println!("Example 5: Cross-Validation for Parameter Selection (Parallel)");
+    println!("{}", "-".repeat(80));
+
+    let x: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+    let y: Vec<f64> = x
+        .iter()
+        .map(|&xi| 2.0 * xi + 1.0 + (xi * 0.5).sin())
+        .collect();
+
+    // Test multiple fractions and select the best one using parallel execution
+    let start = Instant::now();
+    let model = Lowess::new()
+        .cross_validate(
+            &[0.2, 0.3, 0.5, 0.7],
+            CrossValidationStrategy::KFold,
+            Some(5),
+        )
+        .iterations(2)
+        .adapter(Batch)
+        .parallel(true)
+        .build()?;
+
+    let result = model.fit(&x, &y)?;
+    let duration = start.elapsed();
+
+    println!("Cross-validation completed in {:?}", duration);
+    println!("Selected fraction: {}", result.fraction_used);
+    if let Some(scores) = &result.cv_scores {
+        println!("CV scores for each fraction: {:?}", scores);
+    }
+    println!("\n{}", result);
+
+    /* Expected Output:
+    Cross-validation completed in XXXµs
+    Selected fraction: 0.5
+    CV scores for each fraction: [0.123, 0.098, 0.145, 0.187]
+
+    Summary:
+      Data points: 20
+      Fraction: 0.5 (selected via K-Fold CV)
+
+    Smoothed Data:
+           X     Y_smooth
+      --------------------
+        1.00     3.47943
+        2.00     5.47943
+        3.00     7.14112
+        ... (17 more rows)
+    */
 
     println!();
     Ok(())
