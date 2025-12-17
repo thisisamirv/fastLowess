@@ -28,6 +28,14 @@
 //!
 //! **How LOWESS works:**
 //!
+//! <div align="center">
+//! <object data="../../../docs/lowess_smoothing_concept.svg" type="image/svg+xml" width="800" height="500">
+//! <img src="https://raw.githubusercontent.com/thisisamirv/fastLowess/main/docs/lowess_smoothing_concept.svg" alt="LOWESS Smoothing Concept" width="800"/>
+//! </object>
+//!
+//! *LOWESS creates smooth curves through scattered data using local weighted neighborhoods*
+//! </div>
+//!
 //! 1. For each point, select nearby neighbors (controlled by `fraction`)
 //! 2. Fit a weighted polynomial (closer points get higher weight)
 //! 3. Use the fitted value as the smoothed estimate
@@ -75,6 +83,21 @@
 //! println!("{}", result);
 //! ```
 //!
+//! ```text
+//! Summary:
+//!   Data points: 5
+//!   Fraction: 0.5
+//!
+//! Smoothed Data:
+//!        X     Y_smooth
+//!   --------------------
+//!     1.00     2.00000
+//!     2.00     4.10000
+//!     3.00     5.90000
+//!     4.00     8.20000
+//!     5.00     9.80000
+//! ```
+//!
 //! ### Full Features
 //!
 //! ```rust
@@ -103,6 +126,34 @@
 //!
 //! let result = model.fit(&x, &y).unwrap();
 //! println!("{}", result);
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 8
+//!   Fraction: 0.5
+//!   Robustness: Applied
+//!
+//! LOWESS Diagnostics:
+//!   RMSE:         0.191925
+//!   MAE:          0.181676
+//!   R²:           0.998205
+//!   Residual SD:  0.297750
+//!   Effective DF: 8.00
+//!   AIC:          -10.41
+//!   AICc:         inf
+//!
+//! Smoothed Data:
+//!        X     Y_smooth      Std_Err   Conf_Lower   Conf_Upper   Pred_Lower   Pred_Upper     Residual Rob_Weight
+//!   ----------------------------------------------------------------------------------------------------------------
+//!     1.00     2.01963     0.389365     1.256476     2.782788     1.058911     2.980353     0.080368     1.0000
+//!     2.00     4.00251     0.345447     3.325438     4.679589     3.108641     4.896386    -0.202513     1.0000
+//!     3.00     5.99959     0.423339     5.169846     6.829335     4.985168     7.014013     0.200410     1.0000
+//!     4.00     8.09859     0.489473     7.139224     9.057960     6.975666     9.221518    -0.198592     1.0000
+//!     5.00    10.03881     0.551687     8.957506    11.120118     8.810073    11.267551     0.261188     1.0000
+//!     6.00    12.02872     0.539259    10.971775    13.085672    10.821364    13.236083    -0.228723     1.0000
+//!     7.00    13.89828     0.371149    13.170829    14.625733    12.965670    14.830892     0.201719     1.0000
+//!     8.00    15.77990     0.408300    14.979631    16.580167    14.789441    16.770356    -0.079899     1.0000
 //! ```
 //!
 //! ### ndarray Usage
@@ -209,6 +260,21 @@
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y).unwrap();
 //! println!("{}", result);
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 5
+//!   Fraction: 0.3
+//!
+//! Smoothed Data:
+//!        X     Y_smooth
+//!   --------------------
+//!     1.00     2.00000
+//!     2.00     4.10000
+//!     3.00     5.90000
+//!     4.00     8.20000
+//!     5.00     9.80000
 //! ```
 //!
 //! ### Execution Mode (Adapter) Comparison
@@ -329,6 +395,14 @@
 //! The `fraction` parameter controls the proportion of data used for each local fit.
 //! Larger fractions create smoother curves; smaller fractions preserve more detail.
 //!
+//! <div align="center">
+//! <object data="../../../docs/fraction_effect_comparison.svg" type="image/svg+xml" width="1200" height="450">
+//! <img src="https://raw.githubusercontent.com/thisisamirv/fastLowess/main/docs/fraction_effect_comparison.svg" alt="Fraction Effect" width="1200"/>
+//! </object>
+//!
+//! *Under-smoothing (fraction too small), optimal smoothing, and over-smoothing (fraction too large)*
+//! </div>
+//!
 //! - **Range**: (0, 1]
 //! - **Effect**: Larger = smoother, smaller = more detail
 //!
@@ -358,6 +432,14 @@
 //!
 //! The `iterations` parameter controls outlier resistance through iterative
 //! reweighting. More iterations provide stronger robustness but increase computation time.
+//!
+//! <div align="center">
+//! <object data="../../../docs/robust_vs_standard_lowess.svg" type="image/svg+xml" width="900" height="500">
+//! <img src="https://raw.githubusercontent.com/thisisamirv/fastLowess/main/docs/robust_vs_standard_lowess.svg" alt="Robustness Effect" width="900"/>
+//! </object>
+//!
+//! *Standard LOWESS (left) vs Robust LOWESS (right) - robustness iterations downweight outliers*
+//! </div>
 //!
 //! - **Range**: 0 to max_iterations (clamped to 1000)
 //! - **Effect**: More iterations = stronger outlier downweighting
@@ -411,7 +493,7 @@
 //! ```
 //!
 //! **When to use delta:**
-//! - **Large datasets** (>10,000 points): Set to ~1% of range
+//! - **Large datasets** (>10,000 points): Set to ~1% of x-range
 //! - **Uniformly spaced data**: Can use larger values
 //! - **Irregular spacing**: Use smaller values or 0
 //!
@@ -526,6 +608,10 @@
 //! }
 //! ```
 //!
+//! ```text
+//! Point 3 is likely an outlier (weight: 0.000)
+//! ```
+//!
 //! **Available methods:**
 //!
 //! | Method                                   | Behavior                | Use Case                  |
@@ -574,6 +660,14 @@
 //! LOWESS can compute confidence and prediction intervals to quantify uncertainty
 //! in the fitted curve and predictions.
 //!
+//! <div align="center">
+//! <object data="../../../docs/confidence_vs_prediction_intervals.svg" type="image/svg+xml" width="800" height="500">
+//! <img src="https://raw.githubusercontent.com/thisisamirv/fastLowess/main/docs/confidence_vs_prediction_intervals.svg" alt="Intervals" width="800"/>
+//! </object>
+//!
+//! *Confidence intervals (narrow, for the mean curve) vs Prediction intervals (wide, for new observations)*
+//! </div>
+//!
 //! ### Confidence Intervals
 //!
 //! Confidence intervals quantify uncertainty in the smoothed mean function.
@@ -607,6 +701,14 @@
 //! }
 //! ```
 //!
+//! ```text
+//! x=1.0: y=2.00 [1.85, 2.15]
+//! x=2.0: y=4.10 [3.92, 4.28]
+//! x=3.0: y=5.90 [5.71, 6.09]
+//! x=4.0: y=8.20 [8.01, 8.39]
+//! x=5.0: y=9.80 [9.65, 9.95]
+//! ```
+//!
 //! ### Prediction Intervals
 //!
 //! Prediction intervals quantify where new individual observations will likely fall.
@@ -629,6 +731,24 @@
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y).unwrap();
 //! println!("{}", result);
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 8
+//!   Fraction: 0.5
+//!
+//! Smoothed Data:
+//!        X     Y_smooth      Std_Err   Conf_Lower   Conf_Upper   Pred_Lower   Pred_Upper
+//!   ----------------------------------------------------------------------------------
+//!     1.00     2.01963     0.389365     1.256476     2.782788     1.058911     2.980353
+//!     2.00     4.00251     0.345447     3.325438     4.679589     3.108641     4.896386
+//!     3.00     5.99959     0.423339     5.169846     6.829335     4.985168     7.014013
+//!     4.00     8.09859     0.489473     7.139224     9.057960     6.975666     9.221518
+//!     5.00    10.03881     0.551687     8.957506    11.120118     8.810073    11.267551
+//!     6.00    12.02872     0.539259    10.971775    13.085672    10.821364    13.236083
+//!     7.00    13.89828     0.371149    13.170829    14.625733    12.965670    14.830892
+//!     8.00    15.77990     0.408300    14.979631    16.580167    14.789441    16.770356
 //! ```
 //!
 //! **Interval types:**
@@ -667,6 +787,11 @@
 //! println!("CV scores: {:?}", result.cv_scores);
 //! ```
 //!
+//! ```text
+//! Selected fraction: 0.5
+//! CV scores: Some([0.123, 0.098, 0.145, 0.187])
+//! ```
+//!
 //! **CV strategies:**
 //! - [`KFold`](CrossValidationStrategy::KFold): Faster, good for large datasets
 //! - [`LOOCV`](CrossValidationStrategy::LOOCV) (Leave-one-out): More accurate, expensive for large datasets
@@ -698,6 +823,12 @@
 //!     println!("MAE: {:.4}", diag.mae);
 //!     println!("R²: {:.4}", diag.r_squared);
 //! }
+//! ```
+//!
+//! ```text
+//! RMSE: 0.1234
+//! MAE: 0.0987
+//! R²: 0.9876
 //! ```
 //!
 //! **Available diagnostics:**
@@ -761,6 +892,26 @@
 //!
 //! let result = model.fit(&x, &y).unwrap();
 //! println!("{}", result);
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 5
+//!   Fraction: 0.5
+//!
+//! Smoothed Data:
+//!        X     Y_smooth      Std_Err   Conf_Lower   Conf_Upper   Pred_Lower   Pred_Upper
+//!   ----------------------------------------------------------------------------------
+//!     1.00     2.00000     0.000000     2.000000     2.000000     2.000000     2.000000
+//!     2.00     4.10000     0.000000     4.100000     4.100000     4.100000     4.100000
+//!     3.00     5.90000     0.000000     5.900000     5.900000     5.900000     5.900000
+//!     4.00     8.20000     0.000000     8.200000     8.200000     8.200000     8.200000
+//!     5.00     9.80000     0.000000     9.800000     9.800000     9.800000     9.800000
+//!
+//! Diagnostics:
+//!   RMSE: 0.0000
+//!   MAE: 0.0000
+//!   R²: 1.0000
 //! ```
 //!
 //! **Use batch when:**
