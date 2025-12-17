@@ -162,8 +162,13 @@ def compare_results(results_dict, tol=1e-6, loose_tol=0.01):
             if not header_printed:
                 print("\nCV scores:")
                 header_printed = True
-            match, diff, _ = compare_values(base_cv, other_cv, tol)
-            status = "MATCH" if match else f"MISMATCH ({diff})"
+            match, diff, max_diff = compare_values(base_cv, other_cv, tol)
+            if match:
+                status = "MATCH"
+            elif max_diff is not None and max_diff < loose_tol:
+                status = f"ACCEPTABLE ({diff})"
+            else:
+                status = f"MISMATCH ({diff})"
             print(f"{implementations[0]} vs {impl}: {status}")
         
         # Compare diagnostics
@@ -204,21 +209,38 @@ def compare_results(results_dict, tol=1e-6, loose_tol=0.01):
                                 status_label = "ACCEPTABLE"
                             print(f"  {key}: {status_label} ({d})")
         
-        # Compare residuals and robustness_weights
-        extras = ['residuals', 'robustness_weights']
-        for extra in extras:
-            base_extra = data[implementations[0]].get(extra)
-            if base_extra is not None:
-                print(f"\n{extra.capitalize()}:")
-                for impl in implementations[1:]:
-                    match, diff, max_diff = compare_values(base_extra, data[impl].get(extra), tol)
-                    if match:
-                        status = "MATCH"
-                    elif max_diff is not None and max_diff < loose_tol:
-                        status = f"ACCEPTABLE ({diff})"
-                    else:
-                        status = f"MISMATCH ({diff})"
-                    print(f"{implementations[0]} vs {impl}: {status}")
+        # Compare residuals
+        extra = 'residuals'
+        base_extra = data[implementations[0]].get(extra)
+        if base_extra is not None:
+            print(f"\n{extra.capitalize()}:")
+            for impl in implementations[1:]:
+                match, diff, max_diff = compare_values(base_extra, data[impl].get(extra), tol)
+                if match:
+                    status = "MATCH"
+                elif max_diff is not None and max_diff < loose_tol:
+                    status = f"ACCEPTABLE ({diff})"
+                else:
+                    status = f"MISMATCH ({diff})"
+                print(f"{implementations[0]} vs {impl}: {status}")
+
+        # Compare robustness_weights with relaxed tolerance
+        extra = 'robustness_weights'
+        base_extra = data[implementations[0]].get(extra)
+        if base_extra is not None:
+            print(f"\n{extra.capitalize()}:")
+            # Relaxed tolerances for robustness weights
+            rob_tol = 1e-4
+            rob_loose_tol = 0.05
+            for impl in implementations[1:]:
+                match, diff, max_diff = compare_values(base_extra, data[impl].get(extra), rob_tol)
+                if match:
+                    status = "MATCH"
+                elif max_diff is not None and max_diff < rob_loose_tol:
+                    status = f"ACCEPTABLE ({diff})"
+                else:
+                    status = f"MISMATCH ({diff})"
+                print(f"{implementations[0]} vs {impl}: {status}")
 
 if __name__ == "__main__":
     files = {

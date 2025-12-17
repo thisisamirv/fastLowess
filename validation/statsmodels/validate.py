@@ -182,7 +182,8 @@ class LowessBuilder:
             y_smooth = res[:, 1]
 
         residuals = y_sorted - y_smooth
-        residual_sd = np.median(np.abs(residuals)) / 0.67448975 if len(residuals) > 0 else 0
+        median_res = np.median(residuals)
+        residual_sd = np.median(np.abs(residuals - median_res)) * 1.4826 if len(residuals) > 0 else 0
 
         diagnostics = None
         if self.compute_diagnostics:
@@ -204,7 +205,8 @@ class LowessBuilder:
 
         robustness_weights = None
         if self.compute_robustness_weights and iterations > 0:
-            mad = np.median(np.abs(residuals))
+            median_res = np.median(residuals)
+            mad = np.median(np.abs(residuals - median_res))
             if mad == 0:
                 robustness_weights = np.ones(len(residuals))
             else:
