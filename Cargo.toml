@@ -30,9 +30,7 @@ include = [
 ]
 
 [dependencies]
-lowess = { git = "https://github.com/thisisamirv/lowess.git", branch = "develop", features = [
-    "dev",
-] }
+lowess = { version = "0.4.1", features = ["dev"] }
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
 ndarray = { version = "0.17.1", default-features = false }
 rayon = { version = "1.11" }
