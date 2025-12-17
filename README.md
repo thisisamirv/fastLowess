@@ -9,7 +9,7 @@
 
 ## Why This Crate?
 
-- ⚡ **Blazingly Fast**: 13-41× faster performance than Python's statsmodels with parallel execution
+- ⚡ **Blazingly Fast**: 18-352× faster performance than Python's statsmodels with parallel execution
 - 🚀 **Parallel by Default**: Automatic multi-core utilization via rayon
 - 📊 **ndarray Integration**: First-class support for `Array1<T>` data types
 - 🎯 **Production-Ready**: Comprehensive error handling, numerical stability, extensive testing
@@ -25,7 +25,10 @@
 - **ndarray support** for seamless integration with scientific computing workflows
 - **Extended API** with parallel-specific configuration options
 
-If you need a dependency-free, `no_std`-compatible core implementation, use the base `lowess` crate directly.
+> [!IMPORTANT]
+> **Need no-std support?** Use [`lowess`](https://crates.io/crates/lowess) ([GitHub](https://github.com/av746/lowess))
+>
+> **Need polars support?** Use [`polars-lowess`](https://crates.io/crates/polars-lowess) ([GitHub](https://github.com/av746/polars-lowess))
 
 ## Quick Start
 
@@ -572,6 +575,7 @@ See [LICENSE](LICENSE) for full details.
 - [R stats::lowess](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/lowess.html)
 - [Python statsmodels](https://www.statsmodels.org/stable/generated/statsmodels.nonparametric.smoothers_lowess.lowess.html)
 - [lowess crate](https://crates.io/crates/lowess) - Core Rust implementation
+- [polars-lowess crate](https://crates.io/crates/polars-lowess) - Polars integration
 
 ## Citation
 

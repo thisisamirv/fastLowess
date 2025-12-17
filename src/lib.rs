@@ -1232,3 +1232,30 @@ pub mod prelude {
         ZeroWeightFallback,
     };
 }
+
+// ============================================================================
+// Testing re-exports
+// ============================================================================
+
+/// Internal modules for development and testing.
+///
+/// This module re-exports internal modules for development and testing purposes.
+/// It is only available with the `dev` feature enabled.
+///
+/// **Warning**: These are internal implementation details and may change without notice.
+/// Do not use in production code.
+#[cfg(feature = "dev")]
+pub mod internals {
+    /// Internal execution engine.
+    pub mod engine {
+        pub use crate::engine::*;
+    }
+    /// Internal adapters.
+    pub mod adapters {
+        pub use crate::adapters::*;
+    }
+    /// Internal API.
+    pub mod api {
+        pub use crate::api::*;
+    }
+}
