@@ -114,6 +114,8 @@
 //!     .robustness_method(RobustnessMethod::Bisquare)  // Outlier handling
 //!     .delta(0.01)                                    // Interpolation optimization
 //!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)  // Fallback policy
+//!     .auto_converge(1e-6)                            // Convergence tolerance
+//!     .max_iterations(20)                             // Maximum iterations
 //!     .confidence_intervals(0.95)                     // 95% confidence intervals
 //!     .prediction_intervals(0.95)                     // 95% prediction intervals
 //!     .return_diagnostics()                           // Fit quality metrics
@@ -208,10 +210,12 @@
 //! | **weight_function**           | [`Tricube`](WeightFunction::Tricube)               | 7 kernel options     | Distance weighting kernel                        |
 //! | **robustness_method**         | [`Bisquare`](RobustnessMethod::Bisquare)           | 3 methods            | Outlier downweighting method                     |
 //! | **zero_weight_fallback**      | [`UseLocalMean`](ZeroWeightFallback::UseLocalMean) | 3 fallback options   | Behavior when all weights are zero               |
+//! | **max_iterations**            | 20                                                 | [1, 1000]            | Maximum iterations (clamped)                     |
 //! | **parallel**                  | true (Batch/Streaming), false (Online)             | true/false           | Enable parallel execution (fastLowess)           |
 //! | **confidence_intervals**      | None                                               | 0 to 1 (level)       | Confidence interval level (disabled by default)  |
 //! | **prediction_intervals**      | None                                               | 0 to 1 (level)       | Prediction interval level (disabled by default)  |
 //! | **cross_validate**            | None                                               | Fractions + strategy | Cross-validation settings (disabled by default)  |
+//! | **auto_converge**             | None                                               | Tolerance value      | Auto-convergence tolerance (disabled by default) |
 //! | **return_diagnostics**        | false                                              | true/false           | Compute RMSE, MAE, R², etc.                      |
 //! | **return_residuals**          | false                                              | true/false           | Include residuals in output                      |
 //! | **return_robustness_weights** | false                                              | true/false           | Include robustness weights in output             |
@@ -383,6 +387,15 @@
 //!     .return_diagnostics()
 //!     .return_residuals()
 //!     .return_robustness_weights()
+//!     .adapter(Batch)
+//!     .build()
+//!     .unwrap();
+//!
+//! // 11. Adaptive convergence
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .auto_converge(1e-6)
+//!     .max_iterations(20)
 //!     .adapter(Batch)
 //!     .build()
 //!     .unwrap();
@@ -796,6 +809,35 @@
 //! - [`KFold`](CrossValidationStrategy::KFold): Faster, good for large datasets
 //! - [`LOOCV`](CrossValidationStrategy::LOOCV) (Leave-one-out): More accurate, expensive for large datasets
 //!
+//! ## Auto-Convergence
+//!
+//! Automatically stop iterations when the smoothed values converge.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! // Build model with auto-convergence
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .auto_converge(1e-6)      // Stop when change < 1e-6
+//!     .max_iterations(20)       // Maximum iterations
+//!     .adapter(Batch)
+//!     .build()
+//!     .unwrap();
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y).unwrap();
+//!
+//! println!("Converged after {} iterations", result.iterations_used.unwrap());
+//! ```
+//!
+//! ```text
+//! Converged after 1 iterations
+//! ```
+//!
 //! ## Diagnostics
 //!
 //! Compute diagnostic statistics to assess fit quality.
@@ -1108,6 +1150,8 @@
 //!
 //! ### Advanced
 //! - `.zero_weight_fallback(policy)` - Zero-weight handling
+//! - `.auto_converge(tolerance)` - Stop when converged
+//! - `.max_iterations(n)` - Maximum iterations (clamped to [1, 1000])
 //!
 //! ### Adapters
 //! - `.adapter(Batch)` - Standard mode (all features, parallel by default)
