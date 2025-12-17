@@ -240,7 +240,12 @@ pub fn smooth_pass_parallel<T>(
 /// Compute anchor points for delta optimization.
 ///
 /// Returns indices of points that should be explicitly fitted.
-/// Points are spaced at least delta apart in x-values.
+/// Uses the same inline logic as the lowess crate for consistency:
+/// 1. Forward linear scan to find next anchor point
+/// 2. Handle tied x-values inline during scan
+/// 3. Points beyond cutpoint (last_x + delta) become anchors
+///
+/// This matches statsmodels' behavior for consistency.
 fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     let n = x.len();
     if n == 0 {
@@ -248,13 +253,41 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     }
 
     let mut anchors = vec![0]; // Always include the first point
-    let mut last_x = x[0];
+    let mut last_fitted = 0usize;
+    let mut k = 1usize;
 
-    for (i, &xi) in x.iter().enumerate().skip(1) {
-        if xi - last_x >= delta {
-            anchors.push(i);
-            last_x = xi;
+    // Main loop: process all points using inline delta logic
+    while k < n {
+        let cutpoint = x[last_fitted] + delta;
+
+        // Scan forward, handling tied values inline
+        while k < n && x[k] <= cutpoint {
+            // Handle tied x-values: they become anchors too
+            if x[k] == x[last_fitted] {
+                if k != last_fitted {
+                    anchors.push(k);
+                }
+                last_fitted = k;
+            }
+            k += 1;
         }
+
+        // Determine current anchor point to fit
+        // Either k-1 (last point within delta) or at minimum last_fitted+1
+        let current = if k > 0 {
+            usize::max(k.saturating_sub(1), last_fitted + 1).min(n - 1)
+        } else {
+            (last_fitted + 1).min(n - 1)
+        };
+
+        // Check if we've made progress
+        if current <= last_fitted {
+            break;
+        }
+
+        anchors.push(current);
+        last_fitted = current;
+        k = current + 1;
     }
 
     // Ensure the last point is included if not already
