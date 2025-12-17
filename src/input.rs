@@ -3,7 +3,7 @@
 //! This module defines the `LowessInput` trait which allows the `fit` method
 //! to accept both standard slices and ndarray inputs interchangeably.
 
-use lowess::testing::primitives::errors::LowessError;
+use lowess::internals::primitives::errors::LowessError;
 use ndarray::{ArrayBase, Data, Ix1};
 use num_traits::Float;
 

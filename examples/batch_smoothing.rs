@@ -6,7 +6,7 @@
 //! - `ndarray` integration
 //! - Performance comparison (simulated)
 
-use fastLowess::prelude::*;
+use fastLowess::{Adapter::Batch, Lowess, Result, RobustnessMethod};
 use ndarray::Array1;
 use std::time::Instant;
 

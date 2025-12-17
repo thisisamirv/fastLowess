@@ -31,6 +31,8 @@ fn main() -> Result<()> {
     example_4_window_size_comparison()?;
     example_5_memory_bounded_processing()?;
     example_6_sliding_window_behavior()?;
+    example_7_parallel_benchmark()?;
+    example_8_sequential_benchmark()?;
 
     Ok(())
 }
@@ -448,6 +450,90 @@ fn example_6_sliding_window_behavior() -> Result<()> {
     Note: Output starts after window is filled (4 points).
     After that, the window slides: oldest point removed, newest added.
     */
+
+    println!();
+    Ok(())
+}
+
+/// Example 7: Parallel Online Benchmark
+/// Measure execution time for a large dataset using the parallel Online adapter
+fn example_7_parallel_benchmark() -> Result<()> {
+    println!("Example 7: Benchmark (Parallel Online)");
+    println!("{}", "-".repeat(80));
+
+    // Generate a larger synthetic dataset
+    let n = 10_000;
+    println!("Processing {} data points in parallel online mode...", n);
+
+    let start = std::time::Instant::now();
+
+    let mut processor = Lowess::<f64>::new()
+        .fraction(0.5)
+        .iterations(3)
+        .adapter(Online)
+        .window_capacity(100) // 100-point sliding window
+        .parallel(true) // Enable parallel execution
+        .build()?;
+
+    let mut processed_count = 0;
+
+    // Process points one at a time
+    for i in 0..n {
+        let x = i as f64;
+        let y = (x * 0.1).sin() + (x * 0.01).cos();
+
+        if processor.add_point(x, y)?.is_some() {
+            processed_count += 1;
+        }
+    }
+
+    let duration = start.elapsed();
+
+    println!("Processed {} points in {:?}", processed_count, duration);
+    println!("Execution mode: Parallel Online");
+    println!("Window capacity: 100");
+
+    println!();
+    Ok(())
+}
+
+/// Example 8: Sequential Online Benchmark
+/// Measure execution time for a large dataset using the sequential Online adapter
+fn example_8_sequential_benchmark() -> Result<()> {
+    println!("Example 8: Benchmark (Sequential Online)");
+    println!("{}", "-".repeat(80));
+
+    // Generate a larger synthetic dataset
+    let n = 10_000;
+    println!("Processing {} data points in sequential online mode...", n);
+
+    let start = std::time::Instant::now();
+
+    let mut processor = Lowess::<f64>::new()
+        .fraction(0.5)
+        .iterations(3)
+        .adapter(Online)
+        .window_capacity(100) // 100-point sliding window
+        .parallel(false) // Disable parallel execution
+        .build()?;
+
+    let mut processed_count = 0;
+
+    // Process points one at a time
+    for i in 0..n {
+        let x = i as f64;
+        let y = (x * 0.1).sin() + (x * 0.01).cos();
+
+        if processor.add_point(x, y)?.is_some() {
+            processed_count += 1;
+        }
+    }
+
+    let duration = start.elapsed();
+
+    println!("Processed {} points in {:?}", processed_count, duration);
+    println!("Execution mode: Sequential Online");
+    println!("Window capacity: 100");
 
     println!();
     Ok(())

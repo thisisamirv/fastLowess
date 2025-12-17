@@ -15,9 +15,10 @@
 //! * Merges overlapping regions using configurable strategies.
 //! * Handles boundary effects at chunk edges.
 //! * Supports basic smoothing and residuals only (no intervals or diagnostics).
+//! * Delegates computation to the `lowess` crate's streaming adapter.
+//! * Adds parallel execution via `rayon` (fastLowess extension).
 //! * Generic over `Float` types to support f32 and f64.
 //! * Stateful: maintains overlap buffer between chunks.
-//! * **fastLowess addition**: Supports optional parallel execution via rayon.
 //!
 //! ## Key concepts
 //!
@@ -53,7 +54,7 @@
 //! For each chunk:
 //! 1. Validate chunk data
 //! 2. Sort chunk by x-values
-//! 3. Perform LOWESS smoothing
+//! 3. Perform LOWESS smoothing (parallel if enabled)
 //! 4. Extract non-overlapping portion
 //! 5. Merge overlap with previous chunk
 //! 6. Buffer overlap for next chunk
@@ -65,7 +66,7 @@
 //! * **Delta optimization**: Point skipping for dense data
 //! * **Configurable chunking**: Chunk size and overlap
 //! * **Merge strategies**: Multiple overlap merging options
-//! * **Parallel execution**: Optional parallel smoothing via rayon (fastLowess)
+//! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
 //!
 //! ## Invariants
 //!
@@ -83,496 +84,250 @@
 //! * This adapter does not handle batch processing (use batch adapter).
 //! * This adapter does not handle incremental updates (use online adapter).
 //! * This adapter requires chunks to be provided in stream order.
-//!
-//! ## Visibility
-//!
-//! The streaming adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `StreamingLowess` is possible but not
-//! the primary interface.
 
-use crate::engine::executor::{ExecutorOutput, LowessConfig, LowessExecutor};
+use crate::engine::executor::smooth_pass_parallel;
 use crate::input::LowessInput;
 
-use lowess::testing::algorithms::regression::ZeroWeightFallback;
-use lowess::testing::algorithms::robustness::RobustnessMethod;
-use lowess::testing::engine::output::LowessResult;
-use lowess::testing::engine::validator::Validator;
-use lowess::testing::math::kernel::WeightFunction;
-use lowess::testing::primitives::errors::LowessError;
-use lowess::testing::primitives::partition::{BoundaryPolicy, MergeStrategy};
-use lowess::testing::primitives::sorting::sort_by_x;
+use lowess::internals::adapters::streaming::{StreamingLowess, StreamingLowessBuilder};
+use lowess::internals::engine::output::LowessResult;
+use lowess::internals::math::kernel::WeightFunction;
+use lowess::internals::primitives::errors::LowessError;
+use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy};
 
 use num_traits::Float;
 use std::fmt::Debug;
 use std::result::Result;
-use std::vec::Vec;
 
 // ============================================================================
-// Streaming LOWESS Builder
+// Extended Streaming LOWESS Builder
 // ============================================================================
 
-/// Builder for streaming LOWESS processor.
+/// Builder for streaming LOWESS processor with parallel support.
 ///
 /// Configures parameters for chunked processing of large datasets that
-/// don't fit in memory. Provides a fluent API for setting all parameters.
+/// don't fit in memory. Wraps the core `StreamingLowessBuilder` from the
+/// `lowess` crate and adds fastLowess-specific extensions (parallel execution).
 ///
 /// # Fields
 ///
-/// ## Chunking Configuration
-/// * `chunk_size` - Size of each processing chunk (default: 5000)
-/// * `overlap` - Overlap between consecutive chunks (default: 500)
-///
-/// ## Core Parameters
-/// * `fraction` - Smoothing fraction (default: 0.1)
-/// * `iterations` - Number of robustness iterations (default: 2)
-/// * `delta` - Delta parameter for interpolation (default: 0.0)
-///
-/// ## Algorithm Configuration
-/// * `weight_fn` - Kernel weight function (default: Tricube)
-/// * `robustness_method` - Robustness weighting method (default: Bisquare)
-/// * `zero_weight_fallback` - Zero weight fallback policy (default: UseLocalMean)
-/// * `boundary_policy` - Boundary handling policy (default: Extend)
-/// * `merge_strategy` - Overlap merging strategy (default: Average)
-///
-/// ## Output Options
-/// * `compute_residuals` - Whether to return residuals (default: false)
-///
-/// ## Execution Options (fastLowess)
-/// * `parallel` - Whether to use parallel execution (default: true)
-///
-/// ## Internal
-/// * `deferred_error` - Deferred error from adapter conversion (default: None)
+/// * `base` - Core builder from the lowess crate (chunk size, overlap, etc.)
+/// * `parallel` - Whether to use parallel execution (fastLowess extension)
 ///
 /// # Note
 ///
 /// Streaming adapter supports basic smoothing and residuals only.
-/// For advanced features (confidence intervals, diagnostics, robustness weights),
-/// use the Batch adapter.
+/// For advanced features (confidence intervals, diagnostics), use the
+/// Batch adapter.
 #[derive(Debug, Clone)]
-pub struct StreamingLowessBuilder<T: Float> {
-    /// Chunk size for processing
-    pub chunk_size: usize,
+pub struct ExtendedStreamingLowessBuilder<T: Float> {
+    /// Base builder from the lowess crate
+    pub base: StreamingLowessBuilder<T>,
 
-    /// Overlap between chunks
-    pub overlap: usize,
-
-    /// Smoothing fraction (span)
-    pub fraction: T,
-
-    /// Number of robustness iterations
-    pub iterations: usize,
-
-    /// Delta parameter for interpolation
-    pub delta: T,
-
-    /// Kernel weight function
-    pub weight_function: WeightFunction,
-
-    /// Boundary handling policy
-    pub boundary_policy: BoundaryPolicy,
-
-    /// Robustness method
-    pub robustness_method: RobustnessMethod,
-
-    /// Policy for handling zero-weight neighborhoods
-    pub zero_weight_fallback: ZeroWeightFallback,
-
-    /// Merging strategy for overlapping chunks
-    pub merge_strategy: MergeStrategy,
-
-    /// Whether to return residuals
-    pub compute_residuals: bool,
-
-    /// Deferred error from adapter conversion
-    pub deferred_error: Option<LowessError>,
-
-    /// Whether to use parallel execution (fastLowess addition)
+    /// Whether to use parallel execution (fastLowess extension)
     pub parallel: bool,
 }
 
-impl<T: Float> Default for StreamingLowessBuilder<T> {
+impl<T: Float> Default for ExtendedStreamingLowessBuilder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Float> StreamingLowessBuilder<T> {
+impl<T: Float> ExtendedStreamingLowessBuilder<T> {
     /// Create a new streaming LOWESS builder with default parameters.
     ///
     /// # Defaults
     ///
-    /// * chunk_size: 5000
-    /// * overlap: 500
-    /// * fraction: 0.1
-    /// * iterations: 2
-    /// * delta: 0.0
-    /// * weight_fn: Tricube
-    /// * boundary_policy: Extend
-    /// * robustness_method: Bisquare
-    /// * zero_weight_fallback: UseLocalMean
-    /// * merge_strategy: Average
-    /// * compute_residuals: false
-    /// * parallel: true (fastLowess)
-    /// * deferred_error: None
+    /// * All base parameters from lowess StreamingLowessBuilder
+    /// * parallel: true (fastLowess extension)
     fn new() -> Self {
         Self {
-            chunk_size: 5000,
-            overlap: 500,
-            fraction: T::from(0.1).unwrap(),
-            iterations: 2,
-            delta: T::zero(),
-            weight_function: WeightFunction::default(),
-            boundary_policy: BoundaryPolicy::default(),
-            robustness_method: RobustnessMethod::Bisquare,
-            zero_weight_fallback: ZeroWeightFallback::default(),
-            merge_strategy: MergeStrategy::default(),
-            compute_residuals: false,
-            deferred_error: None,
+            base: StreamingLowessBuilder::default(),
             parallel: true,
         }
     }
 
-    // ========================================================================
-    // Chunking Configuration Setters
-    // ========================================================================
-
-    /// Set chunk size for processing.
-    ///
-    /// # Typical values
-    ///
-    /// * Small chunks: 1,000-5,000 (low memory, more overhead)
-    /// * Medium chunks: 5,000-20,000 (balanced)
-    /// * Large chunks: 20,000-100,000 (high memory, less overhead)
-    pub fn chunk_size(mut self, size: usize) -> Self {
-        self.chunk_size = size;
-        self
-    }
-
-    /// Set overlap between chunks.
-    ///
-    /// # Rule of thumb
-    ///
-    /// overlap = 2 × window_size, where window_size = fraction × chunk_size
-    ///
-    /// # Constraints
-    ///
-    /// overlap < chunk_size
-    pub fn overlap(mut self, overlap: usize) -> Self {
-        self.overlap = overlap;
-        self
-    }
-
-    /// Set kernel weight function.
-    pub fn weight_function(mut self, weight_function: WeightFunction) -> Self {
-        self.weight_function = weight_function;
-        self
-    }
-
     /// Set parallel execution mode.
     ///
-    /// # Note
+    /// Parallel execution can significantly speed up processing for large
+    /// chunks by distributing the local regression fits across CPU cores.
     ///
-    /// Parallel execution can significantly speed up processing for large chunks.
-    /// Default is true for streaming adapter.
+    /// # Parameters
+    ///
+    /// * `parallel` - Whether to enable parallel execution (default: true)
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
     }
 
-    // ========================================================================
-    // Build Method
-    // ========================================================================
-
-    /// Build the streaming processor.
+    /// Set the chunk size for processing.
     ///
-    /// # Returns
+    /// Larger chunks use more memory but may produce smoother results.
     ///
-    /// A configured `StreamingLowess` processor ready to process chunks.
+    /// # Parameters
     ///
-    /// # Errors
+    /// * `size` - Number of points per chunk (must be > overlap)
+    pub fn chunk_size(mut self, size: usize) -> Self {
+        self.base = self.base.chunk_size(size);
+        self
+    }
+
+    /// Set the overlap between consecutive chunks.
     ///
-    /// Returns `LowessError` if:
-    /// * A deferred error was set during configuration
-    /// * Fraction is not in (0, 1]
-    /// * Chunk size is too small (< 10)
-    /// * Overlap is too large (>= chunk_size)
-    pub fn build(self) -> Result<StreamingLowess<T>, LowessError> {
-        if let Some(err) = self.deferred_error {
-            return Err(err);
-        }
+    /// Overlap ensures smooth transitions between chunks. Rule of thumb:
+    /// overlap should be at least 2× the LOWESS window size.
+    ///
+    /// # Parameters
+    ///
+    /// * `size` - Number of overlapping points between chunks
+    pub fn overlap(mut self, size: usize) -> Self {
+        self.base = self.base.overlap(size);
+        self
+    }
 
-        // Validate fraction
-        Validator::validate_fraction(self.fraction)?;
+    /// Set the boundary handling policy.
+    ///
+    /// # Parameters
+    ///
+    /// * `policy` - How to handle boundaries (Extend, Truncate, Mirror)
+    pub fn boundary_policy(mut self, policy: BoundaryPolicy) -> Self {
+        self.base.boundary_policy = policy;
+        self
+    }
 
-        // Validate delta
-        Validator::validate_delta(self.delta)?;
+    /// Set the merge strategy for overlapping values.
+    ///
+    /// # Parameters
+    ///
+    /// * `strategy` - How to merge overlapping values (Average, Weighted, etc.)
+    pub fn merge_strategy(mut self, strategy: MergeStrategy) -> Self {
+        self.base.merge_strategy = strategy;
+        self
+    }
 
-        // Validate chunk size
-        Validator::validate_chunk_size(self.chunk_size, 10)?;
-
-        // Validate overlap
-        Validator::validate_overlap(self.overlap, self.chunk_size)?;
-
-        Ok(StreamingLowess {
-            config: self,
-            overlap_buffer_x: Vec::new(),
-            overlap_buffer_y: Vec::new(),
-            overlap_buffer_smoothed: Vec::new(),
-        })
+    /// Set the kernel weight function.
+    ///
+    /// # Parameters
+    ///
+    /// * `wf` - Weight function (e.g., Tricube, Epanechnikov)
+    pub fn weight_function(mut self, wf: WeightFunction) -> Self {
+        self.base = self.base.weight_function(wf);
+        self
     }
 }
 
 // ============================================================================
-// Streaming LOWESS Processor
+// Extended Streaming LOWESS Processor
 // ============================================================================
 
-/// Streaming LOWESS processor for large datasets.
+/// Streaming LOWESS processor with parallel support.
 ///
-/// Processes data in chunks with configurable overlap to handle boundary
-/// effects. Maintains state between chunks to merge overlapping regions.
-///
-/// # Fields
-///
-/// * `config` - Configuration from builder
-/// * `overlap_buffer_x` - Buffered x-values from previous chunk's overlap
-/// * `overlap_buffer_y` - Buffered y-values from previous chunk's overlap
-/// * `overlap_buffer_smoothed` - Buffered smoothed values from previous chunk's overlap
-pub struct StreamingLowess<T: Float> {
-    config: StreamingLowessBuilder<T>,
-    overlap_buffer_x: Vec<T>,
-    overlap_buffer_y: Vec<T>,
-    overlap_buffer_smoothed: Vec<T>,
+/// Performs chunked LOWESS smoothing on large datasets by delegating to
+/// the base `lowess` implementation with optional parallel execution.
+/// Maintains state between chunks for proper overlap handling.
+pub struct ExtendedStreamingLowess<T: Float> {
+    processor: StreamingLowess<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
-    /// Process a chunk of data.
+impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowess<T> {
+    /// Perform LOWESS smoothing on the provided data as a single chunk.
     ///
-    /// Returns the smoothed values for the non-overlapping portion of this chunk.
-    /// The overlap region is buffered for merging with the next chunk.
+    /// Convenience method for processing complete datasets. For true
+    /// streaming with multiple chunks, use `process_chunk()` instead.
     ///
     /// # Parameters
     ///
-    /// * `x` - X-coordinates for this chunk
-    /// * `y` - Y-coordinates for this chunk
+    /// * `x` - Independent variable values
+    /// * `y` - Dependent variable values (must have same length as x)
     ///
     /// # Returns
     ///
-    /// `LowessResult` containing smoothed values for the non-overlapping portion.
+    /// `LowessResult` containing smoothed values and optional residuals.
     ///
     /// # Errors
     ///
-    /// Returns `LowessError` if:
-    /// * `MismatchedInputs`: x and y have different lengths
-    /// * `InvalidNumericValue`: Inf or NaN in input
-    /// * `TooFewPoints`: Chunk too small (min 2 points)
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Validate chunk data
-    /// 2. Sort chunk by x-values
-    /// 3. Perform LOWESS smoothing on entire chunk
-    /// 4. Merge overlap region with previous chunk (if any)
-    /// 5. Extract non-overlapping portion for output
-    /// 6. Buffer overlap region for next chunk
-    pub fn process_chunk<I1, I2>(&mut self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
+    /// Returns `LowessError` if input validation fails.
+    pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
     where
         I1: LowessInput<T> + ?Sized,
         I2: LowessInput<T> + ?Sized,
     {
-        // Convert input to slices
         let x_slice = x.as_lowess_slice()?;
         let y_slice = y.as_lowess_slice()?;
 
-        // Validate inputs using standard validator
-        Validator::validate_inputs(x_slice, y_slice)?;
-
-        // Sort chunk by x
-        let sorted = sort_by_x(x_slice, y_slice);
-
-        // Configure LOWESS for this chunk
-        // Combine with overlap from previous chunk
-        let prev_overlap_len: usize = self.overlap_buffer_smoothed.len();
-        let (combined_x, combined_y) = if self.overlap_buffer_x.is_empty() {
-            (sorted.x.clone(), sorted.y.clone())
-        } else {
-            let mut cx = core::mem::take(&mut self.overlap_buffer_x);
-            cx.extend_from_slice(&sorted.x);
-            let mut cy = core::mem::take(&mut self.overlap_buffer_y);
-            cy.extend_from_slice(&sorted.y);
-            (cx, cy)
-        };
-
-        let config = LowessConfig {
-            fraction: Some(self.config.fraction),
-            iterations: self.config.iterations,
-            delta: self.config.delta,
-            weight_function: self.config.weight_function,
-            zero_weight_fallback: self.config.zero_weight_fallback.to_u8(),
-            robustness_method: self.config.robustness_method,
-            cv_fractions: None,
-            cv_method: None,
-            auto_convergence: None,
-            return_variance: None,
-            parallel: self.config.parallel,
-        };
-
-        // Execute LOWESS on combined data
-        let result: ExecutorOutput<T> =
-            LowessExecutor::run_with_config(&combined_x, &combined_y, config);
-        let smoothed = result.smoothed;
-
-        // Determine how much to return vs buffer
-        let combined_len: usize = combined_x.len();
-        let overlap_start: usize = combined_len.saturating_sub(self.config.overlap);
-        let return_start: usize = prev_overlap_len;
-
-        // Build output: merged overlap (if any) + new data
-        let mut y_smooth_out = Vec::new();
-        if prev_overlap_len > 0 {
-            // Merge the overlap region
-            let prev_smooth: Vec<T> = core::mem::take(&mut self.overlap_buffer_smoothed);
-            for (i, (&prev_val, &curr_val)) in prev_smooth
-                .iter()
-                .zip(smoothed.iter())
-                .take(prev_overlap_len)
-                .enumerate()
-            {
-                let merged = match self.config.merge_strategy {
-                    MergeStrategy::Average => (prev_val + curr_val) / T::from(2.0).unwrap(),
-                    MergeStrategy::WeightedAverage => {
-                        let weight = T::from(i as f64 / prev_overlap_len as f64).unwrap();
-                        prev_val * (T::one() - weight) + curr_val * weight
-                    }
-                    MergeStrategy::TakeFirst => prev_val,
-                    MergeStrategy::TakeLast => curr_val,
-                };
-                y_smooth_out.push(merged);
-            }
-        }
-
-        // Add non-overlap portion
-        if return_start < overlap_start {
-            y_smooth_out.extend_from_slice(&smoothed[return_start..overlap_start]);
-        }
-
-        // Calculate residuals for output
-        let end_idx: usize = return_start + y_smooth_out.len();
-        let residuals_out = if self.config.compute_residuals {
-            let y_slice = &combined_y[return_start..end_idx];
-            Some(
-                y_slice
-                    .iter()
-                    .zip(y_smooth_out.iter())
-                    .map(|(y_val, s)| *y_val - *s)
-                    .collect(),
-            )
-        } else {
-            None
-        };
-
-        // Buffer overlap for next chunk
-        if overlap_start < combined_len {
-            self.overlap_buffer_x = combined_x[overlap_start..].to_vec();
-            self.overlap_buffer_y = combined_y[overlap_start..].to_vec();
-            self.overlap_buffer_smoothed = smoothed[overlap_start..].to_vec();
-        } else {
-            self.overlap_buffer_x.clear();
-            self.overlap_buffer_y.clear();
-            self.overlap_buffer_smoothed.clear();
-        }
-
-        // Note: We return results in sorted order (by x) for streaming chunks.
-        // Unsorting partial results is ambiguous since we only return a subset of the chunk.
-        // The full batch adapter handles global unsorting when processing complete datasets.
-        let x_out = combined_x[return_start..end_idx].to_vec();
-
-        Ok(LowessResult {
-            x: x_out,
-            y: y_smooth_out,
-            standard_errors: None,
-            confidence_lower: None,
-            confidence_upper: None,
-            prediction_lower: None,
-            prediction_upper: None,
-            residuals: residuals_out,
-            robustness_weights: None,
-            diagnostics: None,
-            iterations_used: result.iterations,
-            fraction_used: self.config.fraction,
-            cv_scores: None,
-        })
+        let mut me = self;
+        me.processor.process_chunk(x_slice, y_slice)
     }
 
-    /// Finalize processing and get any remaining buffered data.
+    /// Process a chunk of data.
     ///
-    /// Call this after processing all chunks to get smoothed values for
-    /// the final overlap region.
+    /// Call this method repeatedly with sequential chunks of data for true
+    /// streaming processing. The processor maintains overlap buffers between
+    /// calls to ensure smooth transitions.
+    ///
+    /// # Parameters
+    ///
+    /// * `x` - Independent variable values for this chunk
+    /// * `y` - Dependent variable values for this chunk
     ///
     /// # Returns
     ///
-    /// `LowessResult` containing smoothed values for the buffered overlap,
-    /// or an empty result if no data is buffered.
-    pub fn finalize(&mut self) -> Result<LowessResult<T>, LowessError> {
-        if self.overlap_buffer_x.is_empty() {
-            return Ok(LowessResult {
-                x: Vec::new(),
-                y: Vec::new(),
-                standard_errors: None,
-                confidence_lower: None,
-                confidence_upper: None,
-                prediction_lower: None,
-                prediction_upper: None,
-                residuals: None,
-                robustness_weights: None,
-                diagnostics: None,
-                iterations_used: None,
-                fraction_used: self.config.fraction,
-                cv_scores: None,
-            });
-        }
-
-        // Return buffered overlap data
-        let residuals = if self.config.compute_residuals {
-            let mut res = Vec::with_capacity(self.overlap_buffer_x.len());
-            for (i, &smoothed) in self.overlap_buffer_smoothed.iter().enumerate() {
-                res.push(self.overlap_buffer_y[i] - smoothed);
-            }
-            Some(res)
-        } else {
-            None
-        };
-
-        let result = LowessResult {
-            x: self.overlap_buffer_x.clone(),
-            y: self.overlap_buffer_smoothed.clone(),
-            standard_errors: None,
-            confidence_lower: None,
-            confidence_upper: None,
-            prediction_lower: None,
-            prediction_upper: None,
-            residuals,
-            robustness_weights: None,
-            diagnostics: None,
-            iterations_used: None,
-            fraction_used: self.config.fraction,
-            cv_scores: None,
-        };
-
-        // Clear buffers
-        self.overlap_buffer_x.clear();
-        self.overlap_buffer_y.clear();
-        self.overlap_buffer_smoothed.clear();
-
-        Ok(result)
+    /// `LowessResult` containing smoothed values for the non-overlapping
+    /// portion of this chunk (merged with previous chunk's overlap).
+    ///
+    /// # Errors
+    ///
+    /// Returns `LowessError` if chunk validation fails.
+    pub fn process_chunk(&mut self, x: &[T], y: &[T]) -> Result<LowessResult<T>, LowessError> {
+        self.processor.process_chunk(x, y)
     }
 
-    /// Reset the processor state.
+    /// Finalize processing and get remaining buffered data.
     ///
-    /// Clears all buffered overlap data. Useful when starting a new stream
-    /// or handling gaps in the data.
-    pub fn reset(&mut self) {
-        self.overlap_buffer_x.clear();
-        self.overlap_buffer_y.clear();
-        self.overlap_buffer_smoothed.clear();
+    /// Call this after processing all chunks to retrieve any remaining
+    /// data in the overlap buffer. This ensures no data is lost.
+    ///
+    /// # Returns
+    ///
+    /// `LowessResult` containing smoothed values for the final overlap region.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LowessError` if finalization fails.
+    pub fn finalize(&mut self) -> Result<LowessResult<T>, LowessError> {
+        self.processor.finalize()
+    }
+}
+
+impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowessBuilder<T> {
+    /// Build the streaming processor.
+    ///
+    /// Validates all configuration and creates a ready-to-use processor.
+    ///
+    /// # Returns
+    ///
+    /// A configured `ExtendedStreamingLowess` processor ready to receive chunks.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LowessError` if configuration is invalid (e.g., chunk_size <= overlap).
+    pub fn build(self) -> Result<ExtendedStreamingLowess<T>, LowessError> {
+        // Check for deferred errors from adapter conversion
+        if let Some(ref err) = self.base.deferred_error {
+            return Err(err.clone());
+        }
+
+        // Configure the base builder with parallel callback if enabled
+        let mut builder = self.base.clone();
+
+        if self.parallel {
+            builder.custom_smooth_pass = Some(smooth_pass_parallel);
+        } else {
+            builder.custom_smooth_pass = None;
+        }
+
+        let processor = builder.build()?;
+
+        Ok(ExtendedStreamingLowess { processor })
     }
 }

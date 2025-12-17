@@ -32,6 +32,8 @@ fn main() -> Result<()> {
     example_4_large_dataset_processing()?;
     example_5_outlier_handling()?;
     example_6_file_simulation()?;
+    example_7_parallel_benchmark()?;
+    example_8_sequential_benchmark()?;
 
     Ok(())
 }
@@ -544,6 +546,117 @@ fn example_6_file_simulation() -> Result<()> {
     Output lines: 200
     Status: ✓ All data processed successfully
     */
+
+    println!();
+    Ok(())
+}
+
+/// Example 7: Parallel Streaming Benchmark
+/// Measure execution time for a large dataset using the parallel Streaming adapter
+fn example_7_parallel_benchmark() -> Result<()> {
+    println!("Example 7: Benchmark (Parallel Streaming)");
+    println!("{}", "-".repeat(80));
+
+    // Generate a larger synthetic dataset
+    let n = 10_000;
+    println!("Processing {} data points in parallel streaming mode...", n);
+
+    let start = std::time::Instant::now();
+
+    let mut processor = Lowess::<f64>::new()
+        .fraction(0.5)
+        .iterations(3)
+        .adapter(Streaming)
+        .chunk_size(1000) // Process 1000 points per chunk
+        .overlap(100) // 100 points overlap
+        .parallel(true) // Enable parallel execution
+        .build()?;
+
+    let chunk_size = 1000;
+    let overlap = 100;
+    let mut total_processed = 0;
+
+    // Process in chunks
+    for chunk_start in (0..n).step_by(chunk_size - overlap) {
+        let chunk_end = (chunk_start + chunk_size).min(n);
+
+        // Generate chunk on-the-fly
+        let x_chunk: Vec<f64> = (chunk_start..chunk_end).map(|i| i as f64).collect();
+        let y_chunk: Vec<f64> = x_chunk
+            .iter()
+            .map(|&xi| (xi * 0.1).sin() + (xi * 0.01).cos())
+            .collect();
+
+        let result = processor.process_chunk(&x_chunk, &y_chunk)?;
+        total_processed += result.x.len();
+    }
+
+    // Finalize
+    let final_result = processor.finalize()?;
+    total_processed += final_result.x.len();
+
+    let duration = start.elapsed();
+
+    println!("Processed {} points in {:?}", total_processed, duration);
+    println!("Execution mode: Parallel Streaming");
+    println!("Chunk size: {}, Overlap: {}", chunk_size, overlap);
+
+    println!();
+    Ok(())
+}
+
+/// Example 8: Sequential Streaming Benchmark
+/// Measure execution time for a large dataset using the sequential Streaming adapter
+fn example_8_sequential_benchmark() -> Result<()> {
+    println!("Example 8: Benchmark (Sequential Streaming)");
+    println!("{}", "-".repeat(80));
+
+    // Generate a larger synthetic dataset
+    let n = 10_000;
+    println!(
+        "Processing {} data points in sequential streaming mode...",
+        n
+    );
+
+    let start = std::time::Instant::now();
+
+    let mut processor = Lowess::<f64>::new()
+        .fraction(0.5)
+        .iterations(3)
+        .adapter(Streaming)
+        .chunk_size(1000) // Process 1000 points per chunk
+        .overlap(100) // 100 points overlap
+        .parallel(false) // Disable parallel execution
+        .build()?;
+
+    let chunk_size = 1000;
+    let overlap = 100;
+    let mut total_processed = 0;
+
+    // Process in chunks
+    for chunk_start in (0..n).step_by(chunk_size - overlap) {
+        let chunk_end = (chunk_start + chunk_size).min(n);
+
+        // Generate chunk on-the-fly
+        let x_chunk: Vec<f64> = (chunk_start..chunk_end).map(|i| i as f64).collect();
+        let y_chunk: Vec<f64> = x_chunk
+            .iter()
+            .map(|&xi| (xi * 0.1).sin() + (xi * 0.01).cos())
+            .collect();
+
+        let result = processor.process_chunk(&x_chunk, &y_chunk)?;
+        total_processed += result.x.len();
+    }
+
+    // Finalize
+    let final_result = processor.finalize()?;
+    total_processed += final_result.x.len();
+
+    let duration = start.elapsed();
+
+    println!("Processed {} points in {:?}", total_processed, duration);
+    println!("Execution mode: Sequential Streaming");
+    println!("Chunk size: {}, Overlap: {}", chunk_size, overlap);
 
     println!();
     Ok(())
