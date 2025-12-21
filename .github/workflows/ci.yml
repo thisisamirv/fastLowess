@@ -27,7 +27,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # --- Setup ---
+      # Setup
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@master
         with:
@@ -38,7 +38,7 @@ jobs:
         with:
           key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      # --- Execution ---
+      # Execution
       - name: Run Tests (default / parallel)
         run: cargo test
 
@@ -56,7 +56,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # --- Setup ---
+      # Setup
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -65,7 +65,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
-      # --- Checks ---
+      # Checks
       - name: Check Formatting
         run: cargo fmt --all -- --check
 
@@ -85,14 +85,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # --- Setup ---
+      # Setup
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
-      # --- Build ---
+      # Build
       - name: Check Documentation (default / parallel)
         run: cargo doc --no-deps
         env:

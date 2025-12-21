@@ -5,32 +5,41 @@
 //! This module provides the parallel smoothing function that is injected into
 //! the `lowess` crate's execution engine. It enables multi-threaded execution
 //! of the local regression fits, significantly speeding up LOWESS smoothing
-//! for large datasets.
+//! for large datasets by utilizing all available CPU cores.
 //!
 //! ## Design notes
 //!
-//! * Provides a drop-in replacement for the sequential smoothing pass.
+//! * Provides a drop-in replacement for the sequential smoothing pass (`SmoothPassFn`).
 //! * Uses `rayon` for data-parallel execution across CPU cores.
 //! * Reuses weight buffers per thread via `map_init` to minimize allocations.
-//! * Compatible with the `SmoothPassFn` signature expected by `lowess`.
+//! * Compatible with the unified execution engine in the `lowess` crate.
+//! * Supports delta optimization for sparse fitting with linear interpolation.
 //! * Generic over `Float` types to support f32 and f64.
-//! * Supports delta optimization for sparse fitting with interpolation.
 //!
 //! ## Key concepts
 //!
+//! ## Execution Flow
+//!
+//! 1. Create a parallel iterator over data points or anchor points.
+//! 2. Initialize thread-local scratch buffers (weights).
+//! 3. Perform weighted local regressions in parallel across CPU cores.
+//! 4. Collect results and write to the output buffer.
+//! 5. If `delta` optimization is active, linearly interpolate between anchors.
+//!
 //! ### Parallel Fitting
 //! Instead of fitting points sequentially, the parallel executor:
-//! 1. Distributes points across available CPU cores
-//! 2. Each thread fits its assigned points independently
-//! 3. Results are collected and written to the output buffer
+//! 1. Distributes points across available CPU cores via `rayon`.
+//! 2. Each thread fits its assigned points independently using local regression.
+//! 3. Results are collected and written to the output buffer in the correct order.
 //!
 //! ### Delta Optimization
-//! When delta > 0, instead of fitting every point:
-//! 1. Pre-compute "anchor" points spaced at least delta apart
-//! 2. Parallel fit only those anchor points
-//! 3. Linearly interpolate between anchors for intermediate points
+//! When `delta > 0`, instead of fitting every point, the executor:
+//! 1. Pre-computes "anchor" points spaced at least `delta` apart.
+//! 2. Fits only these anchor points in parallel.
+//! 3. Linearly interpolates between anchors for all intermediate points.
 //!
-//! This provides significant speedup on dense data with minimal accuracy loss.
+//! This follows the approach described in Cleveland (1979) and provides
+//! significant speedup on dense data with minimal accuracy loss.
 //!
 //! ### Buffer Reuse
 //! To minimize allocation overhead in tight loops:
@@ -47,15 +56,22 @@
 //!
 //! ## Invariants
 //!
-//! * Input x-values are assumed to be sorted.
-//! * All arrays (x, y, y_smooth, robustness_weights) have the same length.
-//! * Robustness weights are in [0, 1].
-//! * Window size is at least 1 and at most n.
+//! * Input x-values are assumed to be monotonically increasing (sorted).
+//! * All buffers (x, y, y_smooth, robustness_weights) have the same length.
+//! * Robustness weights are expected to be in $[0, 1]$.
+//! * Window size is at least 1 and at most $n$.
+//!
+//! ## Non-goals
+//!
+//! * This module does not handle the iteration loop (handled by `lowess::executor`).
+//! * This module does not validate input data (handled by `validator`).
+//! * This module does not sort input data (caller's responsibility).
 //!
 //! ## Visibility
 //!
-//! This module is an internal implementation detail. The parallel function
-//! is exported for use by the adapters but may change without notice.
+//! This module is an internal implementation detail used by the LOWESS
+//! adapters. The parallel smoothing function is exported for use by the
+//! high-level API but may change without notice.
 
 use lowess::internals::algorithms::regression::{
     LinearRegression, Regression, RegressionContext, ZeroWeightFallback,
@@ -90,22 +106,21 @@ use rayon::prelude::*;
 ///
 /// # Algorithm
 ///
-/// When delta = 0:
-/// 1. Create parallel iterator over all point indices
-/// 2. For each point (in parallel): perform weighted local regression
-/// 3. Collect results and copy to output buffer
+/// When `delta == 0`:
+/// 1. Create a parallel iterator over all point indices.
+/// 2. For each point: perform weighted local regression in parallel.
+/// 3. Collect results and copy to the output buffer.
 ///
-/// When delta > 0:
-/// 1. Pre-compute anchor points spaced at least delta apart
-/// 2. Parallel fit only anchor points
-/// 3. Linearly interpolate between anchors
+/// When `delta > 0`:
+/// 1. Pre-compute "anchor" points spaced at least `delta` apart.
+/// 2. Parallel fit only the selected anchor points.
+/// 3. Linearly interpolate between anchors in the output buffer.
 ///
 /// # Performance
 ///
-/// * O(N × k) total work distributed across P cores (when delta = 0)
-/// * O(A × k) + O(N) when delta > 0, where A = number of anchors
-/// * Where N = number of points, k = window size, P = CPU cores
-/// * Memory: O(N) per thread for weight buffers (reused)
+/// * $O(N \times k)$ total work distributed across $P$ cores (when `delta == 0`).
+/// * $O(A \times k) + O(N)$ work when `delta > 0`, where $A$ = number of anchors.
+/// * Memory: $O(N)$ per thread for weight buffers, reused across fits.
 #[allow(clippy::too_many_arguments)]
 pub fn smooth_pass_parallel<T>(
     x: &[T],

@@ -129,13 +129,6 @@ impl<T: Float> LowessAdapter<T> for Batch {
 /// Use with `builder.adapter(Streaming)` to select streaming execution mode.
 /// Streaming mode processes large datasets in chunks with configurable overlap.
 /// Uses parallel execution by default (fastLowess).
-///
-/// # Fields
-///
-/// * `chunk_size` - Size of each processing chunk (default: 5000)
-/// * `overlap` - Overlap between consecutive chunks (default: 500)
-/// * `boundary_policy` - Boundary handling policy (default: Extend)
-/// * `merge_strategy` - Overlap merging strategy (default: WeightedAverage)
 #[derive(Debug, Clone, Copy)]
 pub struct Streaming;
 
@@ -159,12 +152,6 @@ impl<T: Float> LowessAdapter<T> for Streaming {
 /// Use with `builder.adapter(Online)` to select online execution mode.
 /// Online mode maintains a sliding window for incremental updates.
 /// Uses sequential execution by default for lower latency.
-///
-/// # Fields
-///
-/// * `window_capacity` - Maximum number of points to retain (default: 1000)
-/// * `min_points` - Minimum points before smoothing starts (default: 3)
-/// * `update_mode` - Update mode for incremental processing (default: Incremental)
 #[derive(Debug, Clone, Copy)]
 pub struct Online;
 

@@ -30,3 +30,5 @@ Cargo.lock
 # Test coverage
 cobertura.xml
 tarpaulin-report.html
+coverage_html/
+coverage_detail.txt

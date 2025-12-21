@@ -2,61 +2,43 @@
 check: fmt clippy build test doc
 	@echo "All checks completed successfully!"
 
-# --- Formatting ---
+# Coverage (requires cargo-llvm-cov and llvm)
+coverage:
+	@echo "Running coverage report (text)..."
+	@LLVM_COV=llvm-cov LLVM_PROFDATA=llvm-profdata cargo llvm-cov --features dev
+	@echo "Coverage report complete!"
+
+# Formatting
 fmt:
 	@echo "Checking code formatting..."
 	@cargo fmt --all -- --check
 	@echo "Formatting check complete!"
 
-# --- Linter ---
-clippy: clippy-default clippy-serial
-
-clippy-default:
-	@echo "Running clippy (default / parallel)..."
+# Linter
+clippy:
+	@echo "Running clippy..."
 	@cargo clippy --all-targets -- -D warnings
-
-clippy-serial:
-	@echo "Running clippy (serial / no parallel)..."
-	@cargo clippy --all-targets --no-default-features -- -D warnings
 	@echo "Clippy check complete!"
 
-# --- Build ---
-build: build-default build-serial
-
-build-default:
-	@echo "Building crate (default / parallel)..."
+# Build
+build:
+	@echo "Building crate..."
 	@cargo build
-
-build-serial:
-	@echo "Building crate (serial / no parallel)..."
-	@cargo build --no-default-features
 	@echo "Build complete!"
 
-# --- Test ---
-test: test-default test-serial
-
-test-default:
-	@echo "Running tests (default / parallel)..."
-	@cargo test
-
-test-serial:
-	@echo "Running tests (serial / no parallel)..."
-	@cargo test --no-default-features
+# Test
+test:
+	@echo "Running tests..."
+	@cargo test --workspace
 	@echo "Tests complete!"
 
-# --- Documentation ---
-doc: doc-default doc-serial
+# Documentation
+doc:
+	@echo "Building documentation..."
+	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 	@echo "Documentation build complete!"
 
-doc-default:
-	@echo "Building documentation (default / parallel)..."
-	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
-
-doc-serial:
-	@echo "Building documentation (serial / no parallel)..."
-	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --no-default-features
-
-# --- Clean ---
+# Clean
 clean:
 	@echo "Performing cargo clean..."
 	@cargo clean

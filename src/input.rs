@@ -13,11 +13,6 @@ use num_traits::Float;
 /// both `&[T]` and `&ArrayBase` (ndarray) seamlessly.
 pub trait LowessInput<T: Float> {
     /// Convert the input to a contiguous slice.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(&[T])` - A reference to the underlying contiguous slice.
-    /// * `Err(LowessError)` - If the data is not contiguous in memory.
     fn as_lowess_slice(&self) -> Result<&[T], LowessError>;
 }
 

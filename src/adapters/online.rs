@@ -10,7 +10,7 @@
 //!
 //! ## Design notes
 //!
-//! * Uses a fixed-size circular buffer for the sliding window.
+//! * Uses a fixed-size circular buffer (VecDeque) for the sliding window.
 //! * Automatically evicts oldest points when capacity is reached.
 //! * Performs full LOWESS smoothing on the current window for each new point.
 //! * Supports basic smoothing and residuals only (no intervals or diagnostics).
@@ -44,8 +44,8 @@
 //! 5. Return smoothed value for the newest point
 //!
 //! ### Update Modes
-//! * **Incremental**: Fast updates, good accuracy (O(window))
-//! * **Full**: Slower updates, excellent accuracy (O(window²))
+//! * **Incremental**: Basic incremental updates (currently performs full re-smooth)
+//! * **Full**: Full re-smooth of the current window (O(window²))
 //!
 //! ### Initialization Phase
 //! Before `min_points` are accumulated, `add_point()` returns `None`.
@@ -55,6 +55,7 @@
 //!
 //! * **Robustness iterations**: Downweight outliers iteratively
 //! * **Residuals**: Differences between original and smoothed values
+//! * **Window snapshots**: Get full `LowessResult` for current window
 //! * **Reset capability**: Clear window for handling data gaps
 //! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
 //!
@@ -73,15 +74,23 @@
 //! * This adapter does not support cross-validation.
 //! * This adapter does not handle batch processing (use batch adapter).
 //! * This adapter does not handle out-of-order points.
+//!
+//! ## Visibility
+//!
+//! The online adapter is part of the public API through the high-level
+//! `Lowess` builder. Direct usage of `OnlineLowess` is possible but not
+//! the primary interface.
 
 use crate::engine::executor::smooth_pass_parallel;
 use crate::input::LowessInput;
 
 pub use lowess::internals::adapters::online::OnlineOutput;
 use lowess::internals::adapters::online::{OnlineLowess, OnlineLowessBuilder};
+use lowess::internals::algorithms::regression::ZeroWeightFallback;
+use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::errors::LowessError;
-use lowess::internals::primitives::partition::UpdateMode;
+use lowess::internals::primitives::partition::{BoundaryPolicy, UpdateMode};
 
 use num_traits::Float;
 use std::fmt::Debug;
@@ -124,68 +133,102 @@ impl<T: Float> Default for ExtendedOnlineLowessBuilder<T> {
 
 impl<T: Float> ExtendedOnlineLowessBuilder<T> {
     /// Create a new online LOWESS builder with default parameters.
-    ///
-    /// # Defaults
-    ///
-    /// * All base parameters from lowess OnlineLowessBuilder
-    /// * parallel: true (fastLowess extension)
     fn new() -> Self {
         Self {
             base: OnlineLowessBuilder::default(),
-            parallel: true,
+            parallel: false,
         }
     }
 
     /// Set parallel execution mode.
-    ///
-    /// Parallel execution can speed up processing for windows with many
-    /// points by distributing the local regression fits across CPU cores.
-    ///
-    /// # Parameters
-    ///
-    /// * `parallel` - Whether to enable parallel execution (default: true)
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
     }
 
+    // ========================================================================
+    // Shared Setters
+    // ========================================================================
+
+    /// Set the smoothing fraction (span).
+    pub fn fraction(mut self, fraction: T) -> Self {
+        self.base = self.base.fraction(fraction);
+        self
+    }
+
+    /// Set the number of robustness iterations.
+    pub fn iterations(mut self, iterations: usize) -> Self {
+        self.base = self.base.iterations(iterations);
+        self
+    }
+
+    /// Set the delta parameter for interpolation optimization.
+    pub fn delta(mut self, delta: T) -> Self {
+        self.base = self.base.delta(delta);
+        self
+    }
+
+    /// Set the kernel weight function.
+    pub fn weight_function(mut self, wf: WeightFunction) -> Self {
+        self.base = self.base.weight_function(wf);
+        self
+    }
+
+    /// Set the robustness method for outlier handling.
+    pub fn robustness_method(mut self, method: RobustnessMethod) -> Self {
+        self.base = self.base.robustness_method(method);
+        self
+    }
+
+    /// Set the zero-weight fallback policy.
+    pub fn zero_weight_fallback(mut self, fallback: ZeroWeightFallback) -> Self {
+        self.base = self.base.zero_weight_fallback(fallback);
+        self
+    }
+
+    /// Set the boundary handling policy.
+    pub fn boundary_policy(mut self, policy: BoundaryPolicy) -> Self {
+        self.base = self.base.boundary_policy(policy);
+        self
+    }
+
+    /// Enable auto-convergence for robustness iterations.
+    pub fn auto_converge(mut self, tolerance: T) -> Self {
+        self.base = self.base.auto_converge(tolerance);
+        self
+    }
+
+    /// Enable returning residuals in the output.
+    pub fn compute_residuals(mut self, enabled: bool) -> Self {
+        self.base = self.base.compute_residuals(enabled);
+        self
+    }
+
+    /// Enable returning robustness weights in the result.
+    pub fn return_robustness_weights(mut self, enabled: bool) -> Self {
+        self.base = self.base.return_robustness_weights(enabled);
+        self
+    }
+
+    // ========================================================================
+    // Online-Specific Setters
+    // ========================================================================
+
     /// Set the maximum window capacity.
-    ///
-    /// # Parameters
-    ///
-    /// * `capacity` - Maximum number of points to retain in the window
     pub fn window_capacity(mut self, capacity: usize) -> Self {
         self.base = self.base.window_capacity(capacity);
         self
     }
 
     /// Set the minimum points required before smoothing starts.
-    ///
-    /// # Parameters
-    ///
-    /// * `min_points` - Minimum points before `add_point()` returns smoothed values
     pub fn min_points(mut self, min_points: usize) -> Self {
         self.base = self.base.min_points(min_points);
         self
     }
 
     /// Set the update mode for incremental processing.
-    ///
-    /// # Parameters
-    ///
-    /// * `mode` - Update mode (Incremental or Full)
     pub fn update_mode(mut self, mode: UpdateMode) -> Self {
-        self.base.update_mode = mode;
-        self
-    }
-
-    /// Set the kernel weight function.
-    ///
-    /// # Parameters
-    ///
-    /// * `wf` - Weight function (e.g., Tricube, Epanechnikov)
-    pub fn weight_function(mut self, wf: WeightFunction) -> Self {
-        self.base.weight_function = wf;
+        self.base = self.base.update_mode(mode);
         self
     }
 }
@@ -205,44 +248,11 @@ pub struct ExtendedOnlineLowess<T: Float> {
 
 impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowess<T> {
     /// Add a new point and return the smoothed value.
-    ///
-    /// Adds the point to the sliding window, evicting the oldest point if
-    /// at capacity, then performs LOWESS smoothing on the current window.
-    ///
-    /// # Parameters
-    ///
-    /// * `x` - Independent variable value
-    /// * `y` - Dependent variable value
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Some(output))` - Smoothed value and metadata (if enough points)
-    /// * `Ok(None)` - Not enough points yet (initialization phase)
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if input values are not finite.
     pub fn add_point(&mut self, x: T, y: T) -> Result<Option<OnlineOutput<T>>, LowessError> {
         self.processor.add_point(x, y)
     }
 
     /// Add multiple points and return their smoothed values.
-    ///
-    /// Convenience method for processing multiple points sequentially.
-    ///
-    /// # Parameters
-    ///
-    /// * `x` - Independent variable values
-    /// * `y` - Dependent variable values (must have same length as x)
-    ///
-    /// # Returns
-    ///
-    /// Vector of optional smoothed values corresponding to each input point.
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if input arrays have different lengths or
-    /// contain non-finite values.
     pub fn add_points<I1, I2>(
         &mut self,
         x: &I1,
@@ -267,8 +277,6 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowess<T> {
     }
 
     /// Reset the processor, clearing all window data.
-    ///
-    /// Useful for handling data gaps or starting a new sequence.
     pub fn reset(&mut self) {
         self.processor.reset();
     }
@@ -276,16 +284,6 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowess<T> {
 
 impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowessBuilder<T> {
     /// Build the online processor.
-    ///
-    /// Validates all configuration and creates a ready-to-use processor.
-    ///
-    /// # Returns
-    ///
-    /// A configured `ExtendedOnlineLowess` processor ready to receive points.
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if configuration is invalid.
     pub fn build(self) -> Result<ExtendedOnlineLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion
         if let Some(ref err) = self.base.deferred_error {

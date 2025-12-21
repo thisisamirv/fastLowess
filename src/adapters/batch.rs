@@ -12,9 +12,10 @@
 //!
 //! * Processes entire dataset in a single pass.
 //! * Automatically sorts data by x-values and unsorts results.
-//! * Delegates computation to the `lowess` crate's execution engine.
+//! * Delegates computation to the execution engine.
 //! * Supports all LOWESS features: robustness, CV, intervals, diagnostics.
 //! * Adds parallel execution via `rayon` (fastLowess extension).
+//! * Uses builder pattern for configuration.
 //! * Generic over `Float` types to support f32 and f64.
 //!
 //! ## Key concepts
@@ -65,13 +66,24 @@
 //! * This adapter does not handle streaming data (use streaming adapter).
 //! * This adapter does not handle incremental updates (use online adapter).
 //! * This adapter does not handle missing values (NaN).
+//!
+//! ## Visibility
+//!
+//! The batch adapter is part of the public API through the high-level
+//! `Lowess` builder. Direct usage of `BatchLowess` is possible but not
+//! the primary interface.
 
 use crate::engine::executor::smooth_pass_parallel;
 use crate::input::LowessInput;
 
 use lowess::internals::adapters::batch::BatchLowessBuilder;
+use lowess::internals::algorithms::regression::ZeroWeightFallback;
+use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
+use lowess::internals::evaluation::cv::CVMethod;
+use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::errors::LowessError;
+use lowess::internals::primitives::partition::BoundaryPolicy;
 
 use num_traits::Float;
 use std::fmt::Debug;
@@ -126,15 +138,106 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
     }
 
     /// Set parallel execution mode.
-    ///
-    /// Parallel execution can significantly speed up processing for large
-    /// datasets by distributing the local regression fits across CPU cores.
-    ///
-    /// # Parameters
-    ///
-    /// * `parallel` - Whether to enable parallel execution (default: true)
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
+        self
+    }
+
+    // ========================================================================
+    // Shared Setters
+    // ========================================================================
+
+    /// Set the smoothing fraction (span).
+    pub fn fraction(mut self, fraction: T) -> Self {
+        self.base = self.base.fraction(fraction);
+        self
+    }
+
+    /// Set the number of robustness iterations.
+    pub fn iterations(mut self, iterations: usize) -> Self {
+        self.base = self.base.iterations(iterations);
+        self
+    }
+
+    /// Set the delta parameter for interpolation optimization.
+    pub fn delta(mut self, delta: T) -> Self {
+        self.base = self.base.delta(delta);
+        self
+    }
+
+    /// Set the kernel weight function.
+    pub fn weight_function(mut self, wf: WeightFunction) -> Self {
+        self.base = self.base.weight_function(wf);
+        self
+    }
+
+    /// Set the robustness method for outlier handling.
+    pub fn robustness_method(mut self, method: RobustnessMethod) -> Self {
+        self.base = self.base.robustness_method(method);
+        self
+    }
+
+    /// Set the zero-weight fallback policy.
+    pub fn zero_weight_fallback(mut self, fallback: ZeroWeightFallback) -> Self {
+        self.base = self.base.zero_weight_fallback(fallback);
+        self
+    }
+
+    /// Set the boundary handling policy.
+    pub fn boundary_policy(mut self, policy: BoundaryPolicy) -> Self {
+        self.base = self.base.boundary_policy(policy);
+        self
+    }
+
+    /// Enable auto-convergence for robustness iterations.
+    pub fn auto_converge(mut self, tolerance: T) -> Self {
+        self.base = self.base.auto_converge(tolerance);
+        self
+    }
+
+    /// Enable returning residuals in the output.
+    pub fn compute_residuals(mut self, enabled: bool) -> Self {
+        self.base = self.base.compute_residuals(enabled);
+        self
+    }
+
+    /// Enable returning robustness weights in the result.
+    pub fn return_robustness_weights(mut self, enabled: bool) -> Self {
+        self.base = self.base.return_robustness_weights(enabled);
+        self
+    }
+
+    // ========================================================================
+    // Batch-Specific Setters
+    // ========================================================================
+
+    /// Enable returning diagnostics in the result.
+    pub fn return_diagnostics(mut self, enabled: bool) -> Self {
+        self.base = self.base.return_diagnostics(enabled);
+        self
+    }
+
+    /// Enable confidence intervals at the specified level.
+    pub fn confidence_intervals(mut self, level: T) -> Self {
+        self.base = self.base.confidence_intervals(level);
+        self
+    }
+
+    /// Enable prediction intervals at the specified level.
+    pub fn prediction_intervals(mut self, level: T) -> Self {
+        self.base = self.base.prediction_intervals(level);
+        self
+    }
+
+    /// Enable cross-validation with the specified fractions.
+    pub fn cross_validate(mut self, fractions: Vec<T>) -> Self {
+        self.base = self.base.cross_validate(fractions);
+        self
+    }
+
+    /// Set the cross-validation method.
+    pub fn cv_method(mut self, method: CVMethod) -> Self {
+        self.base = self.base.cv_method(method);
         self
     }
 
@@ -143,16 +246,6 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
     // ========================================================================
 
     /// Build the batch processor.
-    ///
-    /// Validates all configuration and creates a ready-to-use processor.
-    ///
-    /// # Returns
-    ///
-    /// A configured `ExtendedBatchLowess` processor ready to fit data.
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if configuration is invalid.
     pub fn build(self) -> Result<ExtendedBatchLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion
         if let Some(ref err) = self.base.deferred_error {
@@ -185,40 +278,6 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedBatchLowess<T> {
     /// This method validates inputs, executes LOWESS smoothing (with parallel
     /// execution if enabled), and returns comprehensive results including
     /// smoothed values and optional outputs (diagnostics, intervals, etc.).
-    ///
-    /// # Parameters
-    ///
-    /// * `x` - Independent variable values
-    /// * `y` - Dependent variable values (must have same length as x)
-    ///
-    /// # Returns
-    ///
-    /// `LowessResult` containing:
-    /// * Smoothed y-values
-    /// * Standard errors (if intervals requested)
-    /// * Confidence/prediction intervals (if requested)
-    /// * Residuals (if requested)
-    /// * Robustness weights (if requested)
-    /// * Diagnostics (if requested)
-    ///
-    /// # Errors
-    ///
-    /// Returns `LowessError` if:
-    /// * Input arrays have different lengths
-    /// * Inputs contain NaN or infinity
-    /// * Fewer than 2 data points
-    /// * Invalid fraction value
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Validate inputs
-    /// 2. Sort data by x-values
-    /// 3. Execute LOWESS smoothing (parallel if enabled)
-    /// 4. Compute residuals
-    /// 5. Compute diagnostics (if requested)
-    /// 6. Compute intervals (if requested)
-    /// 7. Unsort all results to match original order
-    /// 8. Package into `LowessResult`
     pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
     where
         I1: LowessInput<T> + ?Sized,
