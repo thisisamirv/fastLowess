@@ -12,7 +12,7 @@
 
 ## Features
 
-- **Parallel by Default**: Multi-core regression fits via [rayon](https://crates.io/crates/rayon), achieving 3-8× speedups on large datasets.
+- **Parallel by Default**: Multi-core regression fits via [rayon](https://crates.io/crates/rayon), achieving multiple orders of magnitude speedups on large datasets.
 - **ndarray Integration**: Native support for `Array1<T>` and `ArrayView1<T>`.
 - **Robust Statistics**: MAD-based scale estimation and IRLS with Bisquare, Huber, or Talwar weighting.
 - **Uncertainty Quantification**: Point-wise standard errors, confidence intervals, and prediction intervals.
@@ -41,7 +41,35 @@ $$\hat{\sigma} = 1.4826 \times \text{MAD}$$
 
 ## Performance Advantages
 
-Even without and before any parallelization, the core engine achieves **50-1400× faster performance** than Python's `statsmodels`. With `fastLowess`, you gain additional multi-core scaling for multi-million point datasets.
+Benchmarked against Python's `statsmodels`. Achieves **50-3800× faster performance** across different tested scenarios. The parallel implementation ensures that even at extreme scales (100k points), processing remains sub-20ms.
+
+### Summary
+
+| Category         | Matched | Median Speedup | Mean Speedup |
+| :--------------- | :------ | :------------- | :----------- |
+| **Scalability**  | 5       | **765x**       | 1433x        |
+| **Pathological** | 4       | **448x**       | 416x         |
+| **Iterations**   | 6       | **436x**       | 440x         |
+| **Fraction**     | 6       | **424x**       | 413x         |
+| **Financial**    | 4       | **336x**       | 385x         |
+| **Scientific**   | 4       | **327x**       | 366x         |
+| **Genomic**      | 4       | **20x**        | 25x          |
+| **Delta**        | 4       | **4x**         | 5.5x         |
+
+### Top 10 Performance Wins
+
+| Benchmark          | statsmodels | fastLowess | Speedup   |
+| :----------------- | :---------- | :--------- | :-------- |
+| scale_100000       | 43.727s     | 11.4ms     | **3824x** |
+| scale_50000        | 11.160s     | 5.95ms     | **1876x** |
+| scale_10000        | 663.1ms     | 0.87ms     | **765x**  |
+| financial_10000    | 497.1ms     | 0.66ms     | **748x**  |
+| scientific_10000   | 777.2ms     | 1.07ms     | **729x**  |
+| fraction_0.05      | 197.2ms     | 0.37ms     | **534x**  |
+| scale_5000         | 229.9ms     | 0.44ms     | **523x**  |
+| fraction_0.1       | 227.9ms     | 0.45ms     | **512x**  |
+| financial_5000     | 170.9ms     | 0.34ms     | **497x**  |
+| scientific_5000    | 268.5ms     | 0.55ms     | **489x**  |
 
 Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmarks) for detailed comparisons.
 
