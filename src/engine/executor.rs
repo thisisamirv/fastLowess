@@ -58,8 +58,8 @@
 //!
 //! * Input x-values are assumed to be monotonically increasing (sorted).
 //! * All buffers (x, y, y_smooth, robustness_weights) have the same length.
-//! * Robustness weights are expected to be in $[0, 1]$.
-//! * Window size is at least 1 and at most $n$.
+//! * Robustness weights are expected to be in [0, 1].
+//! * Window size is at least 1 and at most n.
 //!
 //! ## Non-goals
 //!
@@ -86,41 +86,6 @@ use rayon::prelude::*;
 // ============================================================================
 
 /// Perform a single smoothing pass over all points in parallel.
-///
-/// This function distributes the local regression fits across CPU cores
-/// using `rayon`, providing significant speedup for large datasets.
-/// When delta > 0, it uses delta optimization to fit only anchor points
-/// and interpolate between them.
-///
-/// # Parameters
-///
-/// * `x` - Independent variable values (sorted)
-/// * `y` - Dependent variable values
-/// * `window_size` - Size of the local window for each fit
-/// * `delta` - Interpolation optimization threshold (0 = fit all points)
-/// * `use_robustness` - Whether to apply robustness weights
-/// * `robustness_weights` - Array of robustness weights (used if `use_robustness` is true)
-/// * `y_smooth` - Output buffer for smoothed values (same length as x)
-/// * `weight_function` - Kernel weight function
-/// * `zero_weight_flag` - Zero weight fallback policy (0=UseLocalMean, 1=ReturnOriginal, 2=ReturnNone)
-///
-/// # Algorithm
-///
-/// When `delta == 0`:
-/// 1. Create a parallel iterator over all point indices.
-/// 2. For each point: perform weighted local regression in parallel.
-/// 3. Collect results and copy to the output buffer.
-///
-/// When `delta > 0`:
-/// 1. Pre-compute "anchor" points spaced at least `delta` apart.
-/// 2. Parallel fit only the selected anchor points.
-/// 3. Linearly interpolate between anchors in the output buffer.
-///
-/// # Performance
-///
-/// * $O(N \times k)$ total work distributed across $P$ cores (when `delta == 0`).
-/// * $O(A \times k) + O(N)$ work when `delta > 0`, where $A$ = number of anchors.
-/// * Memory: $O(N)$ per thread for weight buffers, reused across fits.
 #[allow(clippy::too_many_arguments)]
 pub fn smooth_pass_parallel<T>(
     x: &[T],
@@ -253,14 +218,6 @@ pub fn smooth_pass_parallel<T>(
 }
 
 /// Compute anchor points for delta optimization.
-///
-/// Returns indices of points that should be explicitly fitted.
-/// Uses the same inline logic as the lowess crate for consistency:
-/// 1. Forward linear scan to find next anchor point
-/// 2. Handle tied x-values inline during scan
-/// 3. Points beyond cutpoint (last_x + delta) become anchors
-///
-/// This matches statsmodels' behavior for consistency.
 fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     let n = x.len();
     if n == 0 {

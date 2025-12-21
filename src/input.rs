@@ -8,9 +8,6 @@ use ndarray::{ArrayBase, Data, Ix1};
 use num_traits::Float;
 
 /// Trait for types that can be used as input for LOWESS smoothing.
-///
-/// This trait abstracts over slice-like inputs, allowing functions to accept
-/// both `&[T]` and `&ArrayBase` (ndarray) seamlessly.
 pub trait LowessInput<T: Float> {
     /// Convert the input to a contiguous slice.
     fn as_lowess_slice(&self) -> Result<&[T], LowessError>;

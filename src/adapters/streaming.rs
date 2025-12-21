@@ -64,7 +64,7 @@
 //! * **Robustness iterations**: Downweight outliers iteratively
 //! * **Residuals**: Differences between original and smoothed values
 //! * **Robustness weights**: Return weights used for each point
-//! * **Diagnostics**: RMSE, MAE, R², Residual SD (cumulative)
+//! * **Diagnostics**: RMSE, MAE, R^2, Residual SD (cumulative)
 //! * **Delta optimization**: Point skipping for dense data
 //! * **Configurable chunking**: Chunk size and overlap
 //! * **Merge strategies**: Multiple overlap merging options
@@ -111,21 +111,6 @@ use std::result::Result;
 // ============================================================================
 
 /// Builder for streaming LOWESS processor with parallel support.
-///
-/// Configures parameters for chunked processing of large datasets that
-/// don't fit in memory. Wraps the core `StreamingLowessBuilder` from the
-/// `lowess` crate and adds fastLowess-specific extensions (parallel execution).
-///
-/// # Fields
-///
-/// * `base` - Core builder from the lowess crate (chunk size, overlap, etc.)
-/// * `parallel` - Whether to use parallel execution (fastLowess extension)
-///
-/// # Note
-///
-/// Streaming adapter supports basic smoothing and residuals only.
-/// For advanced features (confidence intervals, diagnostics), use the
-/// Batch adapter.
 #[derive(Debug, Clone)]
 pub struct ExtendedStreamingLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
@@ -254,10 +239,6 @@ impl<T: Float> ExtendedStreamingLowessBuilder<T> {
 // ============================================================================
 
 /// Streaming LOWESS processor with parallel support.
-///
-/// Performs chunked LOWESS smoothing on large datasets by delegating to
-/// the base `lowess` implementation with optional parallel execution.
-/// Maintains state between chunks for proper overlap handling.
 pub struct ExtendedStreamingLowess<T: Float> {
     processor: StreamingLowess<T>,
 }

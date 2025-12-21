@@ -48,7 +48,7 @@
 //! * **Auto-convergence**: Adaptive iteration count
 //! * **Confidence intervals**: Uncertainty in fitted curve
 //! * **Prediction intervals**: Uncertainty for new observations
-//! * **Diagnostics**: RMSE, MAE, R², AIC, AICc
+//! * **Diagnostics**: RMSE, MAE, R^2, AIC, AICc
 //! * **Residuals**: Differences between original and smoothed values
 //! * **Robustness weights**: Final weights from iterative refinement
 //! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
@@ -94,20 +94,6 @@ use std::result::Result;
 // ============================================================================
 
 /// Builder for batch LOWESS processor with parallel support.
-///
-/// Provides a fluent API for configuring batch LOWESS smoothing with
-/// optional parallel execution. Wraps the core `BatchLowessBuilder` from
-/// the `lowess` crate and adds fastLowess-specific extensions.
-///
-/// # Fields
-///
-/// * `base` - Core builder from the lowess crate (fraction, iterations, etc.)
-/// * `parallel` - Whether to use parallel execution (fastLowess extension)
-///
-/// # Usage
-///
-/// Access base builder fields and methods via `.base` or use the provided
-/// builder methods which forward to the base builder.
 #[derive(Debug, Clone)]
 pub struct ExtendedBatchLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
@@ -265,19 +251,12 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
 // ============================================================================
 
 /// Batch LOWESS processor with parallel support.
-///
-/// Performs standard LOWESS smoothing on complete datasets by delegating
-/// to the base `lowess` implementation with optional parallel execution.
 pub struct ExtendedBatchLowess<T: Float> {
     config: ExtendedBatchLowessBuilder<T>,
 }
 
 impl<T: Float + Debug + Send + Sync + 'static> ExtendedBatchLowess<T> {
     /// Perform LOWESS smoothing on the provided data.
-    ///
-    /// This method validates inputs, executes LOWESS smoothing (with parallel
-    /// execution if enabled), and returns comprehensive results including
-    /// smoothed values and optional outputs (diagnostics, intervals, etc.).
     pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
     where
         I1: LowessInput<T> + ?Sized,

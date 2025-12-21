@@ -45,7 +45,7 @@
 //!
 //! ### Update Modes
 //! * **Incremental**: Basic incremental updates (currently performs full re-smooth)
-//! * **Full**: Full re-smooth of the current window (O(window²))
+//! * **Full**: Full re-smooth of the current window (O(window^2))
 //!
 //! ### Initialization Phase
 //! Before `min_points` are accumulated, `add_point()` returns `None`.
@@ -101,21 +101,6 @@ use std::result::Result;
 // ============================================================================
 
 /// Builder for online LOWESS processor with parallel support.
-///
-/// Configures parameters for real-time streaming data processing with a
-/// sliding window. Wraps the core `OnlineLowessBuilder` from the `lowess`
-/// crate and adds fastLowess-specific extensions (parallel execution).
-///
-/// # Fields
-///
-/// * `base` - Core builder from the lowess crate (window, fraction, etc.)
-/// * `parallel` - Whether to use parallel execution (fastLowess extension)
-///
-/// # Note
-///
-/// Online adapter supports basic smoothing and residuals only.
-/// For advanced features (confidence intervals, diagnostics), use the
-/// Batch adapter.
 #[derive(Debug, Clone)]
 pub struct ExtendedOnlineLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
@@ -238,10 +223,6 @@ impl<T: Float> ExtendedOnlineLowessBuilder<T> {
 // ============================================================================
 
 /// Online LOWESS processor with parallel support.
-///
-/// Performs incremental LOWESS smoothing on streaming data by maintaining
-/// a sliding window and delegating to the base `lowess` implementation
-/// with optional parallel execution.
 pub struct ExtendedOnlineLowess<T: Float> {
     processor: OnlineLowess<T>,
 }

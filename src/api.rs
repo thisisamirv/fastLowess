@@ -80,8 +80,6 @@ pub use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy
 // ============================================================================
 
 /// Result type alias for LOWESS operations.
-///
-/// Convenience alias for `Result<T, LowessError>`.
 pub type Result<T> = result::Result<T, LowessError>;
 
 // ============================================================================
@@ -89,9 +87,6 @@ pub type Result<T> = result::Result<T, LowessError>;
 // ============================================================================
 
 /// Adapter selection namespace.
-///
-/// Contains marker types for selecting execution adapters.
-/// Use `Adapter::Batch`, `Adapter::Streaming`, or `Adapter::Online`.
 #[allow(non_snake_case)]
 pub mod Adapter {
     pub use super::{Batch, Online, Streaming};
@@ -102,10 +97,6 @@ pub mod Adapter {
 // ============================================================================
 
 /// Marker type for batch adapter selection.
-///
-/// Use with `builder.adapter(Batch)` to select batch execution mode.
-/// Batch mode processes complete datasets in memory with full feature support.
-/// Uses parallel execution by default (fastLowess).
 #[derive(Debug, Clone, Copy)]
 pub struct Batch;
 

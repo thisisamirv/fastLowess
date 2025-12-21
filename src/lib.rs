@@ -206,7 +206,7 @@
 //! | **boundary_policy**                        | `Extend`                                      | 3 policy options     | Edge handling strategy (reduces boundary bias)   | All              |
 //! | **auto_convergence**                       | None                                          | Tolerance value      | Early stopping for robustness                    | All              |
 //! | **return_robustness_weights**              | false                                         | true/false           | Include final weights in output                  | All              |
-//! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R², etc. in output            | Batch, Streaming |
+//! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output           | Batch, Streaming |
 //! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
 //! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
 //! | **cross_validate**                         | None                                          | Fractions + method   | Automated bandwidth selection                    | Batch            |
@@ -605,17 +605,55 @@
 //!
 //! **Kernel selection guide:**
 //!
-//! | Kernel                                         | Efficiency | Smoothness        | Use Case                   |
-//! |------------------------------------------------|------------|-------------------|----------------------------|
-//! | `Tricube`                                      | 0.998      | Very smooth       | Best all-around choice     |
-//! | `Epanechnikov`                                 | 1.000      | Smooth            | Theoretically optimal MSE  |
-//! | `Gaussian`                                     | 0.961      | Infinitely smooth | Very smooth data           |
-//! | `Biweight`                                     | 0.995      | Very smooth       | Alternative to Tricube     |
-//! | `Cosine`                                       | 0.999      | Smooth            | Alternative compact kernel |
-//! | `Triangle`                                     | 0.989      | Moderate          | Simple, fast               |
-//! | `Uniform`                                      | 0.943      | None              | Fastest, moving average    |
+//! | Kernel                                         | Efficiency | Smoothness        |
+//! |------------------------------------------------|------------|-------------------|
+//! | `Tricube`                                      | 0.998      | Very smooth       |
+//! | `Epanechnikov`                                 | 1.000      | Smooth            |
+//! | `Gaussian`                                     | 0.961      | Infinitely smooth |
+//! | `Biweight`                                     | 0.995      | Very smooth       |
+//! | `Cosine`                                       | 0.999      | Smooth            |
+//! | `Triangle`                                     | 0.989      | Moderate          |
+//! | `Uniform`                                      | 0.943      | None              |
 //!
 //! *Efficiency = AMISE relative to Epanechnikov (1.0 = optimal)*
+//!
+//! **Choosing a Kernel:**
+//!
+//! * **Tricube** (default): Best all-around choice
+//!   - High efficiency (0.9983)
+//!   - Smooth derivatives
+//!   - Compact support (computationally efficient)
+//!   - Cleveland's original choice
+//!
+//! * **Epanechnikov**: Theoretically optimal
+//!   - AMISE-optimal for kernel density estimation
+//!   - Less smooth than tricube
+//!   - Efficiency = 1.0 by definition
+//!
+//! * **Gaussian**: Maximum smoothness
+//!   - Infinitely smooth
+//!   - No boundary effects
+//!   - More expensive to compute
+//!   - Good for very smooth data
+//!
+//! * **Biweight**: Good balance
+//!   - High efficiency (0.9951)
+//!   - Smoother than Epanechnikov
+//!   - Compact support
+//!
+//! * **Cosine**: Smooth and compact
+//!   - Good for robust smoothing contexts
+//!   - High efficiency (0.9995)
+//!
+//! * **Triangle**: Simple and fast
+//!   - Linear taper
+//!   - Less smooth than other kernels
+//!   - Easy to understand
+//!
+//! * **Uniform**: Simplest
+//!   - Equal weights within window
+//!   - Fastest to compute
+//!   - Least smooth results
 //!
 //! ### Robustness Methods
 //!
@@ -834,7 +872,7 @@
 //! **Available diagnostics:**
 //! - **RMSE**: Root mean squared error
 //! - **MAE**: Mean absolute error
-//! - **R²**: Coefficient of determination
+//! - **R^2**: Coefficient of determination
 //! - **Residual SD**: Standard deviation of residuals
 //! - **AIC/AICc**: Information criteria (when applicable)
 //!
@@ -1098,7 +1136,7 @@
 //! Choose between incremental and full window updates for the Online adapter.
 //!
 //! - **`Incremental`** (default): Fit only the latest point - O(q) per point
-//! - **`Full`**: Re-smooth entire window - O(q²) per point
+//! - **`Full`**: Re-smooth entire window - O(q^2) per point
 //!
 //! ```rust
 //! use fastLowess::prelude::*;

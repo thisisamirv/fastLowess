@@ -27,7 +27,9 @@ Built on the same core as `lowess`, this implementation is **more robust than st
 
 We use **Median Absolute Deviation (MAD)** for scale estimation, which is breakdown-point-optimal:
 
-$$s = \text{median}(|r_i - \text{median}(r)|)$$
+```text
+s = median(|r_i - median(r)|)
+```
 
 ### Boundary Padding
 
@@ -37,7 +39,9 @@ We apply **boundary policies** (Extend, Reflect, Zero) at dataset edges to maint
 
 For precision in intervals, residual scale is computed using:
 
-$$\hat{\sigma} = 1.4826 \times \text{MAD}$$
+```text
+sigma = 1.4826 * MAD
+```
 
 ## Performance Advantages
 
@@ -188,7 +192,7 @@ pub struct LowessResult<T> {
     /// Final robustness weights from outlier downweighting
     pub robustness_weights: Option<Vec<T>>,
 
-    /// Detailed fit diagnostics (RMSE, R², Effective DF, etc.)
+    /// Detailed fit diagnostics (RMSE, R^2, Effective DF, etc.)
     pub diagnostics: Option<Diagnostics<T>>,
 
     /// Number of robustness iterations actually performed
