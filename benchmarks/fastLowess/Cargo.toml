@@ -1,14 +1,20 @@
 [package]
 name = "fastLowess-benchmark"
-version = "0.4.0"
+version = "0.2.0"
 edition = "2024"
 publish = false
 
-[[bin]]
+[[bench]]
 name = "benchmark"
-path = "src/benchmark.rs"
+harness = false
 
 [dependencies]
 fastLowess = { git = "https://github.com/thisisamirv/fastLowess", branch = "develop" }
+ndarray = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+rand = { version = "0.9", features = ["std_rng"] }
+rand_distr = "0.5"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }

@@ -21,8 +21,12 @@ Cargo.lock
 *~
 .DS_Store
 
-# Benchmark results
+# Benchmark files
 /target/criterion/
+__pycache__
+.pytest_cache
+benchmarks/statsmodels/c/
+.benchmarks/
 
 # Documentation build
 /target/doc/
@@ -30,3 +34,4 @@ Cargo.lock
 # Test coverage
 cobertura.xml
 tarpaulin-report.html
+coverage_html/

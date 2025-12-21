@@ -1,544 +1,430 @@
 """
-Benchmark statsmodels LOWESS implementation.
+Industry-level LOWESS benchmarks with JSON output for comparison with Rust.
 
-This script benchmarks Python's statsmodels.nonparametric.lowess
-to compare against the Rust implementation.
+Benchmarks are aligned with the Rust criterion benchmarks to enable direct comparison.
+Results are written to benchmarks/output/statsmodels_benchmark.json.
 
-Requirements:
-    pip install statsmodels numpy pandas matplotlib seaborn
-
-Run with:
-    python benchmark_statsmodels.py
+Run with: python3 benchmark_pytest.py
+Or with pytest: pytest benchmark_pytest.py -v --benchmark-json=output.json
 """
 
+import json
 import time
 import numpy as np
-import pandas as pd
-from typing import List, Tuple, Dict
-import json
 from pathlib import Path
+from typing import Tuple, List, Dict
+from dataclasses import dataclass, asdict
 
-# Robust import for statsmodels.lowess (location changed across versions)
+# Robust import for statsmodels.lowess
 try:
-    # modern location used by many releases
     from statsmodels.nonparametric.smoothers_lowess import lowess
-except Exception:
-    try:
-        # older import path used in some examples
-        from statsmodels.nonparametric.lowess import lowess  # type: ignore
-    except Exception:
-        raise RuntimeError(
-            "statsmodels.lowess not found. Install statsmodels and ensure you're running "
-            "the script with the same Python interpreter where the package is installed:\n\n"
-            "    python -m pip install --upgrade statsmodels numpy pandas\n\n"
-            "Then run the script with that python (e.g. `python benchmark_statsmodels.py`)."
-        )
+except ImportError:
+    from statsmodels.nonparametric.lowess import lowess
 
 
+# ============================================================================
+# Benchmark Result Storage
+# ============================================================================
+
+
+@dataclass
 class BenchmarkResult:
     """Store benchmark timing results."""
-    
-    def __init__(self, name: str, size: int, iterations: int = 10):
-        self.name = name
-        self.size = size
-        self.iterations = iterations
-        self.times: List[float] = []
-        self.mean_time: float = 0.0
-        self.std_time: float = 0.0
-        self.median_time: float = 0.0
-        self.min_time: float = 0.0
-        self.max_time: float = 0.0
-    
-    def add_time(self, elapsed: float):
-        """Add a timing measurement."""
-        self.times.append(elapsed)
-    
-    def finalize(self):
-        """Compute statistics from collected times."""
-        if self.times:
-            self.mean_time = np.mean(self.times)
-            self.std_time = np.std(self.times)
-            self.median_time = np.median(self.times)
-            self.min_time = np.min(self.times)
-            self.max_time = np.max(self.times)
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON export."""
-        return {
-            'name': self.name,
-            'size': self.size,
-            'iterations': self.iterations,
-            'mean_time_ms': self.mean_time * 1000,
-            'std_time_ms': self.std_time * 1000,
-            'median_time_ms': self.median_time * 1000,
-            'min_time_ms': self.min_time * 1000,
-            'max_time_ms': self.max_time * 1000,
-        }
+    name: str
+    size: int
+    iterations: int
+    mean_time_ms: float = 0.0
+    std_time_ms: float = 0.0
+    median_time_ms: float = 0.0
+    min_time_ms: float = 0.0
+    max_time_ms: float = 0.0
 
 
-def generate_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
-    """Generate synthetic data for benchmarking.
+def run_benchmark(name: str, size: int, func, iterations: int = 10, warmup: int = 2) -> BenchmarkResult:
+    """Run a benchmark with warmup and timing."""
+    result = BenchmarkResult(name=name, size=size, iterations=iterations)
     
-    Args:
-        size: Number of data points
-        seed: Random seed for reproducibility
+    # Warmup runs
+    for _ in range(warmup):
+        func()
     
-    Returns:
-        Tuple of (x, y) arrays
-    """
-    np.random.seed(seed)
+    # Timed runs
+    times = []
+    for _ in range(iterations):
+        start = time.perf_counter()
+        func()
+        elapsed = time.perf_counter() - start
+        times.append(elapsed * 1000)  # Convert to ms
+    
+    result.mean_time_ms = np.mean(times)
+    result.std_time_ms = np.std(times)
+    result.median_time_ms = np.median(times)
+    result.min_time_ms = np.min(times)
+    result.max_time_ms = np.max(times)
+    
+    return result
+
+
+# ============================================================================
+# Data Generation (Aligned with Rust)
+# ============================================================================
+
+
+def generate_sine_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate smooth sinusoidal data with Gaussian noise."""
+    rng = np.random.default_rng(seed)
     x = np.linspace(0, 10, size)
-    y = np.sin(x) + np.random.normal(0, 0.2, size)
+    y = np.sin(x) + rng.normal(0, 0.2, size)
     return x, y
 
 
-def generate_data_with_outliers(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
-    """Generate synthetic data with outliers.
-    
-    Args:
-        size: Number of data points
-        seed: Random seed for reproducibility
-    
-    Returns:
-        Tuple of (x, y) arrays with outliers
-    """
-    np.random.seed(seed)
+def generate_outlier_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate data with 5% outliers."""
+    rng = np.random.default_rng(seed)
     x = np.linspace(0, 10, size)
-    y = np.sin(x) + np.random.normal(0, 0.2, size)
+    y = np.sin(x) + rng.normal(0, 0.2, size)
     
-    # Add outliers (5% of points)
-    n_outliers = max(1, size // 20)
-    outlier_indices = np.random.choice(size, n_outliers, replace=False)
-    y[outlier_indices] += np.random.choice([-1, 1], n_outliers) * np.random.uniform(2, 5, n_outliers)
-    
+    # Add 5% outliers
+    n_outliers = size // 20
+    for _ in range(n_outliers):
+        idx = rng.integers(0, size)
+        y[idx] += rng.uniform(-5, 5)
     return x, y
 
 
-def benchmark_basic_smoothing(sizes: List[int], iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark basic LOWESS smoothing with different dataset sizes.
+def generate_financial_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate financial time series (geometric Brownian motion)."""
+    rng = np.random.default_rng(seed)
+    x = np.arange(size, dtype=float)
     
-    Args:
-        sizes: List of dataset sizes to test
-        iterations: Number of iterations per size
+    # Simulate stock prices with realistic volatility
+    y = [100.0]  # Starting price
+    for _ in range(1, size):
+        ret = rng.normal(0.0005, 0.02)
+        y.append(y[-1] * (1 + ret))
+    return x, np.array(y)
+
+
+def generate_scientific_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate scientific measurement data (exponential decay with oscillations)."""
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0, 10, size)
+    signal = np.exp(-x * 0.3) * np.cos(x * 2 * np.pi)
+    noise = rng.normal(0, 0.05, size)
+    return x, signal + noise
+
+
+def generate_genomic_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate genomic methylation data (beta values 0-1)."""
+    rng = np.random.default_rng(seed)
+    x = np.arange(size) * 1000.0  # CpG positions
+    base = 0.5 + np.sin(x / 50000.0) * 0.3
+    noise = rng.normal(0, 0.1, size)
+    y = np.clip(base + noise, 0.0, 1.0)
+    return x, y
+
+
+def generate_clustered_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate clustered x-values (groups with tiny spacing)."""
+    rng = np.random.default_rng(seed)
+    x = np.array([(i // 100) + (i % 100) * 1e-6 for i in range(size)])
+    y = np.sin(x) + rng.normal(0, 0.1, size)
+    return x, y
+
+
+def generate_high_noise_data(size: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate high-noise data (SNR < 1)."""
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0, 10, size)
+    signal = np.sin(x) * 0.5
+    noise = rng.normal(0, 2.0, size)  # High noise
+    return x, signal + noise
+
+
+# ============================================================================
+# Benchmark Categories (Aligned with Rust criterion benchmarks)
+# ============================================================================
+
+
+def benchmark_scalability(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark performance scaling with dataset size."""
+    print("\n" + "=" * 80)
+    print("SCALABILITY")
+    print("=" * 80)
     
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
+    sizes = [1000, 5000, 10000, 50000, 100000]
     
     for size in sizes:
-        print(f"Benchmarking basic smoothing with size={size}...")
-        result = BenchmarkResult(f"basic_smoothing_{size}", size, iterations)
+        x, y = generate_sine_data(size, seed=42)
         
-        x, y = generate_data(size)
+        def run():
+            lowess(y, x, frac=0.1, it=3, return_sorted=False)
         
-        # Warmup
-        _ = lowess(y, x, frac=0.3, it=3, return_sorted=False)
-        
-        # Benchmark
-        for _ in range(iterations):
-            start = time.perf_counter()
-            _ = lowess(y, x, frac=0.3, it=3, return_sorted=False)
-            elapsed = time.perf_counter() - start
-            result.add_time(elapsed)
-        
-        result.finalize()
+        result = run_benchmark(f"scale_{size}", size, run, iterations)
         results.append(result)
-        print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+        print(f"  scale_{size}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def benchmark_fraction_variations(size: int = 1000, iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark different smoothing fractions.
+def benchmark_fraction(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark different smoothing fractions."""
+    print("\n" + "=" * 80)
+    print("FRACTION")
+    print("=" * 80)
     
-    Args:
-        size: Dataset size
-        iterations: Number of iterations per fraction
-    
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
-    fractions = [0.1, 0.2, 0.3, 0.5, 0.67, 0.8]
-    
-    x, y = generate_data(size)
+    size = 5000
+    fractions = [0.05, 0.1, 0.2, 0.3, 0.5, 0.67]
+    x, y = generate_sine_data(size, seed=42)
     
     for frac in fractions:
-        print(f"Benchmarking fraction={frac}...")
-        result = BenchmarkResult(f"fraction_{frac}", size, iterations)
+        def run(f=frac):
+            lowess(y, x, frac=f, it=3, return_sorted=False)
         
-        # Warmup
-        _ = lowess(y, x, frac=frac, it=3, return_sorted=False)
-        
-        # Benchmark
-        for _ in range(iterations):
-            start = time.perf_counter()
-            _ = lowess(y, x, frac=frac, it=3, return_sorted=False)
-            elapsed = time.perf_counter() - start
-            result.add_time(elapsed)
-        
-        result.finalize()
+        result = run_benchmark(f"fraction_{frac}", size, run, iterations)
         results.append(result)
-        print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+        print(f"  fraction_{frac}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def benchmark_robustness_iterations(size: int = 1000, iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark different numbers of robustness iterations.
+def benchmark_iterations(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark different robustness iterations."""
+    print("\n" + "=" * 80)
+    print("ITERATIONS")
+    print("=" * 80)
     
-    Args:
-        size: Dataset size
-        iterations: Number of iterations per robustness setting
-    
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
-    niter_values = [0, 1, 2, 3, 5, 10]
+    size = 5000
+    iter_values = [0, 1, 2, 3, 5, 10]
+    x, y = generate_outlier_data(size, seed=42)
     
-    x, y = generate_data_with_outliers(size)
-    
-    for niter in niter_values:
-        print(f"Benchmarking robustness iterations={niter}...")
-        result = BenchmarkResult(f"iterations_{niter}", size, iterations)
+    for it in iter_values:
+        def run(n=it):
+            lowess(y, x, frac=0.2, it=n, return_sorted=False)
         
-        # Warmup
-        _ = lowess(y, x, frac=0.3, it=niter, return_sorted=False)
-        
-        # Benchmark
-        for _ in range(iterations):
-            start = time.perf_counter()
-            _ = lowess(y, x, frac=0.3, it=niter, return_sorted=False)
-            elapsed = time.perf_counter() - start
-            result.add_time(elapsed)
-        
-        result.finalize()
+        result = run_benchmark(f"iterations_{it}", size, run, iterations)
         results.append(result)
-        print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+        print(f"  iterations_{it}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def benchmark_delta_parameter(size: int = 5000, iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark delta parameter effects.
+def benchmark_delta(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark delta parameter effects."""
+    print("\n" + "=" * 80)
+    print("DELTA")
+    print("=" * 80)
     
-    Args:
-        size: Dataset size
-        iterations: Number of iterations per delta value
-    
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
+    size = 10000
+    x, y = generate_sine_data(size, seed=42)
     
-    x = np.linspace(0, 50, size)
-    y = np.sin(x)
-    
-    # Delta values as fraction of data range
-    x_range = x[-1] - x[0]
     delta_configs = [
         ("delta_none", 0.0),
-        ("delta_auto", 0.01 * x_range),  # Statsmodels default
-        ("delta_small", 0.1),
-        ("delta_large", 1.0),
+        ("delta_small", 0.5),
+        ("delta_medium", 2.0),
+        ("delta_large", 10.0),
     ]
     
     for name, delta in delta_configs:
-        print(f"Benchmarking {name} (delta={delta:.2f})...")
-        result = BenchmarkResult(name, size, iterations)
+        def run(d=delta):
+            lowess(y, x, frac=0.2, it=2, delta=d, return_sorted=False)
         
-        # Warmup
-        _ = lowess(y, x, frac=0.3, it=2, delta=delta, return_sorted=False)
-        
-        # Benchmark
-        for _ in range(iterations):
-            start = time.perf_counter()
-            _ = lowess(y, x, frac=0.3, it=2, delta=delta, return_sorted=False)
-            elapsed = time.perf_counter() - start
-            result.add_time(elapsed)
-        
-        result.finalize()
+        result = run_benchmark(name, size, run, iterations)
         results.append(result)
-        print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+        print(f"  {name}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def benchmark_pathological_cases(size: int = 1000, iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark edge cases and pathological inputs.
+def benchmark_financial(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark with financial time series data."""
+    print("\n" + "=" * 80)
+    print("FINANCIAL")
+    print("=" * 80)
     
-    Args:
-        size: Dataset size
-        iterations: Number of iterations per case
-    
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
+    sizes = [500, 1000, 5000, 10000]
     
-    # Clustered x values
-    print("Benchmarking clustered_x...")
-    x_clustered = np.array([i // 100 + (i % 100) * 1e-6 for i in range(size)])
-    y_clustered = np.sin(x_clustered)
-    result = BenchmarkResult("clustered_x", size, iterations)
+    for size in sizes:
+        x, y = generate_financial_data(size, seed=42)
+        
+        def run():
+            lowess(y, x, frac=0.1, it=2, return_sorted=False)
+        
+        result = run_benchmark(f"financial_{size}", size, run, iterations)
+        results.append(result)
+        print(f"  financial_{size}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
-    # Warmup
-    _ = lowess(y_clustered, x_clustered, frac=0.5, it=2, return_sorted=False)
+    return results
+
+
+def benchmark_scientific(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark with scientific measurement data."""
+    print("\n" + "=" * 80)
+    print("SCIENTIFIC")
+    print("=" * 80)
     
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_clustered, x_clustered, frac=0.5, it=2, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
+    results = []
+    sizes = [500, 1000, 5000, 10000]
     
-    result.finalize()
+    for size in sizes:
+        x, y = generate_scientific_data(size, seed=42)
+        
+        def run():
+            lowess(y, x, frac=0.15, it=3, return_sorted=False)
+        
+        result = run_benchmark(f"scientific_{size}", size, run, iterations)
+        results.append(result)
+        print(f"  scientific_{size}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
+    
+    return results
+
+
+def benchmark_genomic(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark with genomic methylation data."""
+    print("\n" + "=" * 80)
+    print("GENOMIC")
+    print("=" * 80)
+    
+    results = []
+    sizes = [1000, 5000, 10000, 50000]
+    
+    for size in sizes:
+        x, y = generate_genomic_data(size, seed=42)
+        
+        def run():
+            lowess(y, x, frac=0.1, it=3, delta=100.0, return_sorted=False)
+        
+        result = run_benchmark(f"genomic_{size}", size, run, iterations)
+        results.append(result)
+        print(f"  genomic_{size}: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
+    
+    return results
+
+
+def benchmark_pathological(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark with pathological/edge case data."""
+    print("\n" + "=" * 80)
+    print("PATHOLOGICAL")
+    print("=" * 80)
+    
+    results = []
+    size = 5000
+    
+    # Clustered
+    x_clustered, y_clustered = generate_clustered_data(size, seed=42)
+    result = run_benchmark(
+        "clustered", size,
+        lambda: lowess(y_clustered, x_clustered, frac=0.3, it=2, return_sorted=False),
+        iterations
+    )
     results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
-    
-    # Extreme outliers
-    print("Benchmarking extreme_outliers...")
-    x_normal = np.linspace(0, 10, size)
-    y_outliers = np.sin(x_normal)
-    for i in range(0, size, 50):
-        y_outliers[i] += 100.0 if i % 100 == 0 else -100.0
-    
-    result = BenchmarkResult("extreme_outliers", size, iterations)
-    
-    # Warmup
-    _ = lowess(y_outliers, x_normal, frac=0.3, it=5, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_outliers, x_normal, frac=0.3, it=5, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
-    results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
-    
-    # Constant y values
-    print("Benchmarking constant_y...")
-    y_constant = np.full(size, 5.0)
-    result = BenchmarkResult("constant_y", size, iterations)
-    
-    # Warmup
-    _ = lowess(y_constant, x_normal, frac=0.3, it=2, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_constant, x_normal, frac=0.3, it=2, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
-    results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+    print(f"  clustered: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     # High noise
-    print("Benchmarking high_noise...")
-    signal = np.sin(x_normal / 10.0) * 0.1
-    noise = np.sin(np.arange(size) * 7.3) * 2.0
-    y_noisy = signal + noise
-    result = BenchmarkResult("high_noise", size, iterations)
-    
-    # Warmup
-    _ = lowess(y_noisy, x_normal, frac=0.6, it=3, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_noisy, x_normal, frac=0.6, it=3, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
+    x_noisy, y_noisy = generate_high_noise_data(size, seed=42)
+    result = run_benchmark(
+        "high_noise", size,
+        lambda: lowess(y_noisy, x_noisy, frac=0.5, it=5, return_sorted=False),
+        iterations
+    )
     results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+    print(f"  high_noise: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
+    
+    # Extreme outliers
+    x_outlier, y_outlier = generate_outlier_data(size, seed=42)
+    result = run_benchmark(
+        "extreme_outliers", size,
+        lambda: lowess(y_outlier, x_outlier, frac=0.2, it=10, return_sorted=False),
+        iterations
+    )
+    results.append(result)
+    print(f"  extreme_outliers: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
+    
+    # Constant y
+    x_const = np.arange(size, dtype=float)
+    y_const = np.full(size, 5.0)
+    result = run_benchmark(
+        "constant_y", size,
+        lambda: lowess(y_const, x_const, frac=0.2, it=2, return_sorted=False),
+        iterations
+    )
+    results.append(result)
+    print(f"  constant_y: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def benchmark_realistic_scenarios(iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark realistic application scenarios.
+def benchmark_weight_functions(iterations: int = 10) -> List[BenchmarkResult]:
+    """Benchmark with different weight functions (statsmodels only has tricube)."""
+    print("\n" + "=" * 80)
+    print("WEIGHT FUNCTIONS")
+    print("=" * 80)
     
-    Args:
-        iterations: Number of iterations per scenario
-    
-    Returns:
-        List of BenchmarkResult objects
-    """
     results = []
+    size = 5000
+    x, y = generate_sine_data(size, seed=42)
     
-    # Financial time series
-    print("Benchmarking financial_timeseries...")
-    size = 1000
-    x = np.arange(size, dtype=float)
-    trend = x * 0.01
-    volatility = np.sin(x / 50.0) * 0.5
-    random_walk = np.cumsum(np.random.normal(0, 0.01, size))
-    y = trend + volatility + random_walk
-    
-    result = BenchmarkResult("financial_timeseries", size, iterations)
-    
-    # Warmup
-    _ = lowess(y, x, frac=0.1, it=2, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y, x, frac=0.1, it=2, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
+    # Statsmodels only supports tricube kernel
+    result = run_benchmark(
+        "tricube", size,
+        lambda: lowess(y, x, frac=0.2, it=3, return_sorted=False),
+        iterations
+    )
     results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
-    
-    # Scientific measurement data
-    print("Benchmarking scientific_data...")
-    x_sci = np.linspace(0, 10, size)
-    signal = np.exp(x_sci * 0.2) * np.cos(x_sci * 10)
-    noise = np.random.normal(0, 0.1, size)
-    y_sci = signal + noise
-    
-    result = BenchmarkResult("scientific_data", size, iterations)
-    
-    # Warmup
-    _ = lowess(y_sci, x_sci, frac=0.2, it=3, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_sci, x_sci, frac=0.2, it=3, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
-    results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
-    
-    # Genomic methylation data
-    print("Benchmarking genomic_methylation...")
-    x_genomic = np.arange(0, size * 1000, 1000, dtype=float)
-    local_mean = 0.5 + np.sin(x_genomic / 5000.0) * 0.2
-    noise = np.random.normal(0, 0.15, size)
-    y_genomic = np.clip(local_mean + noise, 0.0, 1.0)
-    
-    result = BenchmarkResult("genomic_methylation", size, iterations)
-    
-    # Warmup
-    _ = lowess(y_genomic, x_genomic, frac=0.2, it=3, delta=100.0, return_sorted=False)
-    
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = lowess(y_genomic, x_genomic, frac=0.2, it=3, delta=100.0, return_sorted=False)
-        elapsed = time.perf_counter() - start
-        result.add_time(elapsed)
-    
-    result.finalize()
-    results.append(result)
-    print(f"  Mean: {result.mean_time*1000:.2f} ms ± {result.std_time*1000:.2f} ms")
+    print(f"  tricube: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
     
     return results
 
 
-def save_results(all_results: Dict[str, List[BenchmarkResult]], filename: str = "statsmodels_benchmark.json"):
-    """Save benchmark results to JSON file in the workspace-level `output/` directory."""
-    output = {}
-    for category, results in all_results.items():
-        output[category] = [r.to_dict() for r in results]
-
-    # Determine workspace root (benchmarks directory)
-    script_dir = Path(__file__).resolve().parent
-    benchmarks_dir = script_dir.parent
-    
-    out_dir = benchmarks_dir / "output"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    out_path = out_dir / filename
-    with out_path.open("w") as f:
-        json.dump(output, f, indent=2)
-
-    print(f"\nResults saved to {out_path}")
-
-
-def print_summary(all_results: Dict[str, List[BenchmarkResult]]):
-    """Print summary statistics.
-    
-    Args:
-        all_results: Dictionary of benchmark category -> results
-    """
-    print("\n" + "="*80)
-    print("BENCHMARK SUMMARY")
-    print("="*80)
-    
-    for category, results in all_results.items():
-        print(f"\n{category.upper().replace('_', ' ')}")
-        print("-" * 80)
-        for result in results:
-            print(f"{result.name:30s} | Mean: {result.mean_time*1000:8.2f} ms | "
-                  f"Std: {result.std_time*1000:6.2f} ms | "
-                  f"Min: {result.min_time*1000:8.2f} ms | "
-                  f"Max: {result.max_time*1000:8.2f} ms")
+# ============================================================================
+# Main Entry Point
+# ============================================================================
 
 
 def main():
-    """Run all benchmarks."""
-    print("="*80)
-    print("STATSMODELS LOWESS BENCHMARK SUITE")
-    print("="*80)
-    print()
+    """Run all benchmarks and save results."""
+    print("=" * 80)
+    print("STATSMODELS LOWESS BENCHMARK SUITE (Aligned with Rust)")
+    print("=" * 80)
     
-    all_results = {}
+    iterations = 10
+    all_results: Dict[str, List[BenchmarkResult]] = {}
     
-    # Core benchmarks
-    print("\n" + "="*80)
-    print("CORE BENCHMARKS")
-    print("="*80 + "\n")
+    # Run all benchmark categories
+    all_results["scalability"] = benchmark_scalability(iterations)
+    all_results["fraction"] = benchmark_fraction(iterations)
+    all_results["iterations"] = benchmark_iterations(iterations)
+    all_results["delta"] = benchmark_delta(iterations)
+    all_results["financial"] = benchmark_financial(iterations)
+    all_results["scientific"] = benchmark_scientific(iterations)
+    all_results["genomic"] = benchmark_genomic(iterations)
+    all_results["pathological"] = benchmark_pathological(iterations)
+    all_results["weight_functions"] = benchmark_weight_functions(iterations)
     
-    all_results['basic_smoothing'] = benchmark_basic_smoothing(
-        sizes=[100, 500, 1000, 5000, 10000],
-        iterations=10
-    )
+    # Convert to JSON-serializable format
+    output = {}
+    for category, results in all_results.items():
+        output[category] = [asdict(r) for r in results]
     
-    all_results['fraction_variations'] = benchmark_fraction_variations(
-        size=1000,
-        iterations=10
-    )
+    # Save to output directory
+    script_dir = Path(__file__).resolve().parent
+    benchmarks_dir = script_dir.parent
+    out_dir = benchmarks_dir / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
     
-    all_results['robustness_iterations'] = benchmark_robustness_iterations(
-        size=1000,
-        iterations=10
-    )
+    out_path = out_dir / "statsmodels_benchmark.json"
+    with open(out_path, "w") as f:
+        json.dump(output, f, indent=2)
     
-    all_results['delta_parameter'] = benchmark_delta_parameter(
-        size=5000,
-        iterations=10
-    )
-    
-    # Stress tests
-    print("\n" + "="*80)
-    print("STRESS TESTS")
-    print("="*80 + "\n")
-    
-    all_results['pathological_cases'] = benchmark_pathological_cases(
-        size=1000,
-        iterations=10
-    )
-    
-    # Application scenarios
-    print("\n" + "="*80)
-    print("APPLICATION SCENARIOS")
-    print("="*80 + "\n")
-    
-    all_results['realistic_scenarios'] = benchmark_realistic_scenarios(
-        iterations=10
-    )
-    
-    # Print summary and save
-    print_summary(all_results)
-    save_results(all_results)
+    print("\n" + "=" * 80)
+    print(f"Results saved to {out_path}")
+    print("=" * 80)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

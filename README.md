@@ -11,27 +11,36 @@ It builds the `fastLowess` crate from the `develop` branch (git dependency) to e
 
 ## How to Run Benchmarks
 
-Benchmarks measure execution time across various scenarios (basic smoothing, robustness iterations, pathological cases, etc.).
+Benchmarks measure execution time across various scenarios (scalability, fractions, robustness iterations, real-world data, pathological cases).
 
-### 1. Run Rust Benchmarks
+### 1. Run Rust Benchmarks (Criterion)
 
 ```bash
 cd benchmarks/fastLowess
-cargo run --release
+cargo bench
+```
+
+*Results are stored in `benchmarks/fastLowess/target/criterion/` with HTML reports.*
+
+### 2. Convert Criterion Results to JSON
+
+```bash
+cd benchmarks
+python3 convert_criterion.py
 ```
 
 *Output: `benchmarks/output/rust_benchmark.json`*
 
-### 2. Run Statsmodels Benchmarks
+### 3. Run Statsmodels Benchmarks
 
 ```bash
-# form the root directory
-python3 benchmarks/statsmodels/benchmark.py
+cd benchmarks/statsmodels
+python3 benchmark.py
 ```
 
 *Output: `benchmarks/output/statsmodels_benchmark.json`*
 
-### 3. Compare Benchmark Results
+### 4. Compare Benchmark Results
 
 Generate a comparison report showing speedups and regressions.
 
@@ -49,7 +58,7 @@ Validation ensures the Rust implementation produces results identical (or accept
 ### 1. Run Rust Validation
 
 ```bash
-cd validation/fastLowess
+cd validation/lowess
 cargo run --release
 ```
 
@@ -78,4 +87,4 @@ python3 compare_validation.py
 ## Requirements
 
 - **Rust**: Latest stable.
-- **Python**: 3.x with `numpy`, `scipy`, `statsmodels` installed.
+- **Python**: 3.x with `numpy`, `scipy`, `statsmodels`, `pytest` installed.
