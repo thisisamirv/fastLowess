@@ -45,35 +45,35 @@ sigma = 1.4826 * MAD
 
 ## Performance Advantages
 
-Benchmarked against Python's `statsmodels`. Achieves **50-3800× faster performance** across different tested scenarios. The parallel implementation ensures that even at extreme scales (100k points), processing remains sub-20ms.
+Benchmarked against Python's `statsmodels`. Achieves **91-3914× faster performance** across all tested scenarios. The parallel implementation ensures that even at extreme scales (100k points), processing remains sub-12ms.
 
 ### Summary
 
 | Category         | Matched | Median Speedup | Mean Speedup |
 | :--------------- | :------ | :------------- | :----------- |
-| **Scalability**  | 5       | **765x**       | 1433x        |
-| **Pathological** | 4       | **448x**       | 416x         |
-| **Iterations**   | 6       | **436x**       | 440x         |
-| **Fraction**     | 6       | **424x**       | 413x         |
-| **Financial**    | 4       | **336x**       | 385x         |
-| **Scientific**   | 4       | **327x**       | 366x         |
-| **Genomic**      | 4       | **20x**        | 25x          |
-| **Delta**        | 4       | **4x**         | 5.5x         |
+| **Scalability**  | 5       | **819×**       | 1482×        |
+| **Pathological** | 4       | **503×**       | 476×         |
+| **Iterations**   | 6       | **491×**       | 496×         |
+| **Fraction**     | 6       | **464×**       | 447×         |
+| **Financial**    | 4       | **351×**       | 418×         |
+| **Scientific**   | 4       | **345×**       | 404×         |
+| **Genomic**      | 4       | **22×**        | 26×          |
+| **Delta**        | 4       | **5×**         | 6.8×         |
 
 ### Top 10 Performance Wins
 
 | Benchmark          | statsmodels | fastLowess | Speedup   |
 | :----------------- | :---------- | :--------- | :-------- |
-| scale_100000       | 43.727s     | 11.4ms     | **3824x** |
-| scale_50000        | 11.160s     | 5.95ms     | **1876x** |
-| scale_10000        | 663.1ms     | 0.87ms     | **765x**  |
-| financial_10000    | 497.1ms     | 0.66ms     | **748x**  |
-| scientific_10000   | 777.2ms     | 1.07ms     | **729x**  |
-| fraction_0.05      | 197.2ms     | 0.37ms     | **534x**  |
-| scale_5000         | 229.9ms     | 0.44ms     | **523x**  |
-| fraction_0.1       | 227.9ms     | 0.45ms     | **512x**  |
-| financial_5000     | 170.9ms     | 0.34ms     | **497x**  |
-| scientific_5000    | 268.5ms     | 0.55ms     | **489x**  |
+| scale_100000       | 43.727s     | 11.2ms     | **3914×** |
+| scale_50000        | 11.160s     | 5.74ms     | **1946×** |
+| financial_10000    | 497.1ms     | 0.59ms     | **839×**  |
+| scientific_10000   | 777.2ms     | 0.93ms     | **835×**  |
+| scale_10000        | 663.1ms     | 0.81ms     | **819×**  |
+| clustered          | 267.8ms     | 0.48ms     | **554×**  |
+| scale_5000         | 229.9ms     | 0.42ms     | **554×**  |
+| fraction_0.1       | 227.9ms     | 0.42ms     | **542×**  |
+| fraction_0.05      | 197.2ms     | 0.37ms     | **536×**  |
+| financial_5000     | 170.9ms     | 0.32ms     | **536×**  |
 
 Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmarks) for detailed comparisons.
 
