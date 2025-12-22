@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2]
+
+### Changed
+
+- **Binary search for delta optimization**: Replaced linear O(n) scan in `compute_anchor_points` with `partition_point` binary search, reducing anchor discovery complexity from O(n) to O(log n) per anchor point.
+- **Precomputed slope in interpolation**: Eliminated per-iteration division in `interpolate_gap` by precomputing the slope once, reducing computational overhead in the interpolation loop.
+- **Vectorized fill for tied values**: Replaced iterator-based assignment with `slice::fill` for tied x-values, enabling SIMD vectorization.
+- Aligned with `lowess` crate v0.5.3 optimizations for consistent performance characteristics.
+
 ## [0.2.1]
 
 ### Changed

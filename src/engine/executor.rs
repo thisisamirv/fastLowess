@@ -217,7 +217,11 @@ pub fn smooth_pass_parallel<T>(
     }
 }
 
-/// Compute anchor points for delta optimization.
+/// Compute anchor points for delta optimization using O(log n) binary search.
+///
+/// Instead of scanning linearly to find the next anchor, we use `partition_point`
+/// to binary search for the first index where x > cutpoint. This reduces the
+/// complexity from O(n) to O(log n) per anchor point discovery.
 fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     let n = x.len();
     if n == 0 {
@@ -226,31 +230,38 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
 
     let mut anchors = vec![0]; // Always include the first point
     let mut last_fitted = 0usize;
-    let mut k = 1usize;
 
-    // Main loop: process all points using inline delta logic
-    while k < n {
+    // Main loop: process all points using binary search for O(log n) per anchor
+    while last_fitted < n - 1 {
         let cutpoint = x[last_fitted] + delta;
 
-        // Scan forward, handling tied values inline
-        while k < n && x[k] <= cutpoint {
-            // Handle tied x-values: they become anchors too
-            if x[k] == x[last_fitted] {
-                if k != last_fitted {
-                    anchors.push(k);
-                }
-                last_fitted = k;
+        // Binary search to find the first index where x > cutpoint
+        // This is O(log n) instead of O(n) linear scan
+        let next_idx = x[last_fitted + 1..].partition_point(|&xi| xi <= cutpoint) + last_fitted + 1;
+
+        // Handle tied x-values: copy anchor for all points with same x
+        let x_last = x[last_fitted];
+        let mut tie_end = last_fitted;
+        for (i, &xi) in x
+            .iter()
+            .enumerate()
+            .take(next_idx.min(n))
+            .skip(last_fitted + 1)
+        {
+            if xi == x_last {
+                anchors.push(i);
+                tie_end = i;
+            } else {
+                break; // x is sorted, so no more ties
             }
-            k += 1;
+        }
+        if tie_end > last_fitted {
+            last_fitted = tie_end;
         }
 
         // Determine current anchor point to fit
-        // Either k-1 (last point within delta) or at minimum last_fitted+1
-        let current = if k > 0 {
-            usize::max(k.saturating_sub(1), last_fitted + 1).min(n - 1)
-        } else {
-            (last_fitted + 1).min(n - 1)
-        };
+        // Either last point within delta range, or at minimum last_fitted+1
+        let current = usize::max(next_idx.saturating_sub(1), last_fitted + 1).min(n - 1);
 
         // Check if we've made progress
         if current <= last_fitted {
@@ -259,7 +270,6 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
 
         anchors.push(current);
         last_fitted = current;
-        k = current + 1;
     }
 
     // Ensure the last point is included if not already
@@ -271,6 +281,10 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
 }
 
 /// Linearly interpolate between two fitted anchor points.
+///
+/// Optimized with:
+/// - Precomputed slope to eliminate per-iteration division
+/// - Vectorized slice::fill for tied values (denom <= 0)
 fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usize) {
     if end <= start + 1 {
         return;
@@ -283,16 +297,17 @@ fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usi
 
     let denom = x1 - x0;
     if denom <= T::zero() {
+        // Tied or decreasing x-values: use vectorized fill with average
         let avg = (y0 + y1) / T::from(2.0).unwrap();
-        for ys in y_smooth.iter_mut().take(end).skip(start + 1) {
-            *ys = avg;
-        }
+        y_smooth[(start + 1)..end].fill(avg);
         return;
     }
 
+    // Precompute slope to eliminate division in the loop
+    // y = y0 + (x - x0) * slope where slope = (y1 - y0) / (x1 - x0)
+    let slope = (y1 - y0) / denom;
     for k in (start + 1)..end {
-        let alpha = (x[k] - x0) / denom;
-        y_smooth[k] = y0 + alpha * (y1 - y0);
+        y_smooth[k] = y0 + (x[k] - x0) * slope;
     }
 }
 
