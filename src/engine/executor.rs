@@ -218,28 +218,19 @@ pub fn smooth_pass_parallel<T>(
 }
 
 /// Compute anchor points for delta optimization using O(log n) binary search.
-///
-/// Instead of scanning linearly to find the next anchor, we use `partition_point`
-/// to binary search for the first index where x > cutpoint. This reduces the
-/// complexity from O(n) to O(log n) per anchor point discovery.
 fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     let n = x.len();
     if n == 0 {
         return vec![];
     }
 
-    let mut anchors = vec![0]; // Always include the first point
+    let mut anchors = vec![0];
     let mut last_fitted = 0usize;
 
-    // Main loop: process all points using binary search for O(log n) per anchor
     while last_fitted < n - 1 {
         let cutpoint = x[last_fitted] + delta;
-
-        // Binary search to find the first index where x > cutpoint
-        // This is O(log n) instead of O(n) linear scan
         let next_idx = x[last_fitted + 1..].partition_point(|&xi| xi <= cutpoint) + last_fitted + 1;
 
-        // Handle tied x-values: copy anchor for all points with same x
         let x_last = x[last_fitted];
         let mut tie_end = last_fitted;
         for (i, &xi) in x
@@ -252,18 +243,14 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
                 anchors.push(i);
                 tie_end = i;
             } else {
-                break; // x is sorted, so no more ties
+                break;
             }
         }
         if tie_end > last_fitted {
             last_fitted = tie_end;
         }
 
-        // Determine current anchor point to fit
-        // Either last point within delta range, or at minimum last_fitted+1
         let current = usize::max(next_idx.saturating_sub(1), last_fitted + 1).min(n - 1);
-
-        // Check if we've made progress
         if current <= last_fitted {
             break;
         }
@@ -272,7 +259,6 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
         last_fitted = current;
     }
 
-    // Ensure the last point is included if not already
     if *anchors.last().unwrap_or(&0) != n - 1 {
         anchors.push(n - 1);
     }
@@ -281,10 +267,6 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
 }
 
 /// Linearly interpolate between two fitted anchor points.
-///
-/// Optimized with:
-/// - Precomputed slope to eliminate per-iteration division
-/// - Vectorized slice::fill for tied values (denom <= 0)
 fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usize) {
     if end <= start + 1 {
         return;
@@ -297,14 +279,11 @@ fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usi
 
     let denom = x1 - x0;
     if denom <= T::zero() {
-        // Tied or decreasing x-values: use vectorized fill with average
         let avg = (y0 + y1) / T::from(2.0).unwrap();
         y_smooth[(start + 1)..end].fill(avg);
         return;
     }
 
-    // Precompute slope to eliminate division in the loop
-    // y = y0 + (x - x0) * slope where slope = (y1 - y0) / (x1 - x0)
     let slope = (y1 - y0) / denom;
     for k in (start + 1)..end {
         y_smooth[k] = y0 + (x[k] - x0) * slope;

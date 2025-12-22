@@ -7,7 +7,7 @@
 //! - Cross-validation for automatic parameter selection
 //! - Performance comparison (simulated)
 
-use fastLowess::{Adapter::Batch, CrossValidationStrategy, Lowess, Result, RobustnessMethod};
+use fastLowess::prelude::*;
 use ndarray::Array1;
 use std::time::Instant;
 

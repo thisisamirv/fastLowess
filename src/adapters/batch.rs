@@ -30,7 +30,7 @@
 //! 6. Packages everything into a `LowessResult`
 //!
 //! ### Builder Pattern
-//! Configuration is done through `ExtendedBatchLowessBuilder`:
+//! Configuration is done through `ParallelBatchLowessBuilder`:
 //! * Fluent API for setting parameters
 //! * Sensible defaults for all parameters
 //! * Validation deferred until `fit()` is called
@@ -73,9 +73,7 @@
 //! `Lowess` builder. Direct usage of `BatchLowess` is possible but not
 //! the primary interface.
 
-use crate::engine::executor::smooth_pass_parallel;
 use crate::input::LowessInput;
-
 use lowess::internals::adapters::batch::BatchLowessBuilder;
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
@@ -84,7 +82,6 @@ use lowess::internals::evaluation::cv::CVMethod;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::BoundaryPolicy;
-
 use num_traits::Float;
 use std::fmt::Debug;
 use std::result::Result;
@@ -95,21 +92,18 @@ use std::result::Result;
 
 /// Builder for batch LOWESS processor with parallel support.
 #[derive(Debug, Clone)]
-pub struct ExtendedBatchLowessBuilder<T: Float> {
+pub struct ParallelBatchLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
     pub base: BatchLowessBuilder<T>,
-
-    /// Whether to use parallel execution (fastLowess extension)
-    pub parallel: bool,
 }
 
-impl<T: Float> Default for ExtendedBatchLowessBuilder<T> {
+impl<T: Float> Default for ParallelBatchLowessBuilder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Float> ExtendedBatchLowessBuilder<T> {
+impl<T: Float> ParallelBatchLowessBuilder<T> {
     /// Create a new batch LOWESS builder with default parameters.
     ///
     /// # Defaults
@@ -117,15 +111,20 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
     /// * All base parameters from lowess BatchLowessBuilder
     /// * parallel: true (fastLowess extension)
     fn new() -> Self {
-        Self {
-            base: BatchLowessBuilder::default(),
-            parallel: true,
-        }
+        let mut base = BatchLowessBuilder::default();
+        base.parallel = true; // Default to parallel in fastLowess
+        Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
+        self.base.parallel = parallel;
+        self
+    }
+
+    /// Set seed for random number generation.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.base = self.base.seed(seed);
         self
     }
 
@@ -232,7 +231,7 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
     // ========================================================================
 
     /// Build the batch processor.
-    pub fn build(self) -> Result<ExtendedBatchLowess<T>, LowessError> {
+    pub fn build(self) -> Result<ParallelBatchLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion
         if let Some(ref err) = self.base.deferred_error {
             return Err(err.clone());
@@ -242,7 +241,7 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
         // This reuses the validation logic centralized in the lowess crate
         let _ = self.base.clone().build()?;
 
-        Ok(ExtendedBatchLowess { config: self })
+        Ok(ParallelBatchLowess { config: self })
     }
 }
 
@@ -251,11 +250,11 @@ impl<T: Float> ExtendedBatchLowessBuilder<T> {
 // ============================================================================
 
 /// Batch LOWESS processor with parallel support.
-pub struct ExtendedBatchLowess<T: Float> {
-    config: ExtendedBatchLowessBuilder<T>,
+pub struct ParallelBatchLowess<T: Float> {
+    config: ParallelBatchLowessBuilder<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ExtendedBatchLowess<T> {
+impl<T: Float + Debug + Send + Sync + 'static> ParallelBatchLowess<T> {
     /// Perform LOWESS smoothing on the provided data.
     pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
     where
@@ -268,10 +267,15 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedBatchLowess<T> {
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.config.base;
 
-        if self.config.parallel {
-            builder.custom_smooth_pass = Some(smooth_pass_parallel);
+        if builder.parallel {
+            builder.custom_smooth_pass = Some(crate::engine::executor::smooth_pass_parallel);
+            builder.custom_cv_pass = Some(crate::evaluation::cv::cv_pass_parallel);
+            builder.custom_interval_pass =
+                Some(crate::evaluation::intervals::interval_pass_parallel);
         } else {
             builder.custom_smooth_pass = None;
+            builder.custom_cv_pass = None;
+            builder.custom_interval_pass = None;
         }
 
         // Delegate execution to the base implementation

@@ -102,32 +102,34 @@ use std::result::Result;
 
 /// Builder for online LOWESS processor with parallel support.
 #[derive(Debug, Clone)]
-pub struct ExtendedOnlineLowessBuilder<T: Float> {
+pub struct ParallelOnlineLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
     pub base: OnlineLowessBuilder<T>,
-
-    /// Whether to use parallel execution (fastLowess extension)
-    pub parallel: bool,
 }
 
-impl<T: Float> Default for ExtendedOnlineLowessBuilder<T> {
+impl<T: Float> Default for ParallelOnlineLowessBuilder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Float> ExtendedOnlineLowessBuilder<T> {
+impl<T: Float> ParallelOnlineLowessBuilder<T> {
     /// Create a new online LOWESS builder with default parameters.
     fn new() -> Self {
-        Self {
-            base: OnlineLowessBuilder::default(),
-            parallel: false,
-        }
+        let mut base = OnlineLowessBuilder::default();
+        base.parallel = false; // Sequential for lower latency
+        Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
+        self.base.parallel = parallel;
+        self
+    }
+
+    /// Set seed for random number generation.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.base = self.base.seed(seed);
         self
     }
 
@@ -223,11 +225,11 @@ impl<T: Float> ExtendedOnlineLowessBuilder<T> {
 // ============================================================================
 
 /// Online LOWESS processor with parallel support.
-pub struct ExtendedOnlineLowess<T: Float> {
+pub struct ParallelOnlineLowess<T: Float> {
     processor: OnlineLowess<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowess<T> {
+impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowess<T> {
     /// Add a new point and return the smoothed value.
     pub fn add_point(&mut self, x: T, y: T) -> Result<Option<OnlineOutput<T>>, LowessError> {
         self.processor.add_point(x, y)
@@ -263,9 +265,9 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowess<T> {
     }
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowessBuilder<T> {
+impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowessBuilder<T> {
     /// Build the online processor.
-    pub fn build(self) -> Result<ExtendedOnlineLowess<T>, LowessError> {
+    pub fn build(self) -> Result<ParallelOnlineLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion
         if let Some(ref err) = self.base.deferred_error {
             return Err(err.clone());
@@ -274,7 +276,7 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowessBuilder<T> {
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.base.clone();
 
-        if self.parallel {
+        if builder.parallel {
             builder.custom_smooth_pass = Some(smooth_pass_parallel);
         } else {
             builder.custom_smooth_pass = None;
@@ -283,6 +285,6 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedOnlineLowessBuilder<T> {
         // Delegate execution to the base implementation
         let processor = builder.build()?;
 
-        Ok(ExtendedOnlineLowess { processor })
+        Ok(ParallelOnlineLowess { processor })
     }
 }

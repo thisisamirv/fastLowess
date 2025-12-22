@@ -23,7 +23,7 @@
 //!     .fraction(0.5)
 //!     .iterations(2)
 //!     .confidence_intervals(0.95)
-//!     .adapter(Batch)  // Uses ExtendedBatchLowessBuilder with parallel=true
+//!     .adapter(Batch)  // Uses ParallelBatchLowessBuilder with parallel=true
 //!     .fit(x, y)
 //! ```
 //!
@@ -43,9 +43,9 @@ use std::result;
 use num_traits::Float;
 
 // Internal extended adapters
-use crate::adapters::batch::ExtendedBatchLowessBuilder;
-use crate::adapters::online::ExtendedOnlineLowessBuilder;
-use crate::adapters::streaming::ExtendedStreamingLowessBuilder;
+use crate::adapters::batch::ParallelBatchLowessBuilder;
+use crate::adapters::online::ParallelOnlineLowessBuilder;
+use crate::adapters::streaming::ParallelStreamingLowessBuilder;
 
 // ============================================================================
 // Re-exports from lowess crate
@@ -56,20 +56,13 @@ use lowess::internals::api::Batch as BaseBatch;
 use lowess::internals::api::Online as BaseOnline;
 use lowess::internals::api::Streaming as BaseStreaming;
 
-// Unused imports for user convenience
-#[allow(unused_imports)]
-pub use lowess::internals::api::CrossValidationStrategy;
-#[allow(unused_imports)]
-pub use lowess::internals::evaluation::cv::CVMethod;
-#[allow(unused_imports)]
-pub use lowess::internals::evaluation::intervals::IntervalMethod;
-
 // Re-export LowessBuilder and related types from lowess
 pub use lowess::internals::api::{LowessAdapter, LowessBuilder};
 
 // Publicly re-exported types
 pub use lowess::internals::algorithms::regression::ZeroWeightFallback;
 pub use lowess::internals::algorithms::robustness::RobustnessMethod;
+pub use lowess::internals::api::CrossValidationStrategy;
 pub use lowess::internals::engine::output::LowessResult;
 pub use lowess::internals::math::kernel::WeightFunction;
 pub use lowess::internals::primitives::errors::LowessError;
@@ -101,17 +94,18 @@ pub mod Adapter {
 pub struct Batch;
 
 impl<T: Float> LowessAdapter<T> for Batch {
-    type Output = ExtendedBatchLowessBuilder<T>;
+    type Output = ParallelBatchLowessBuilder<T>;
 
     fn convert(builder: LowessBuilder<T>) -> Self::Output {
+        // Determine parallel mode: user choice OR default to true for fastLowess Batch
+        let parallel = builder.parallel.unwrap_or(true);
+
         // Delegate to base implementation to create base builder
-        let base = <BaseBatch as LowessAdapter<T>>::convert(builder);
+        let mut base = <BaseBatch as LowessAdapter<T>>::convert(builder);
+        base.parallel = parallel;
 
         // Wrap with extension fields
-        ExtendedBatchLowessBuilder {
-            base,
-            parallel: true, // Default to parallel
-        }
+        ParallelBatchLowessBuilder { base }
     }
 }
 
@@ -124,17 +118,18 @@ impl<T: Float> LowessAdapter<T> for Batch {
 pub struct Streaming;
 
 impl<T: Float> LowessAdapter<T> for Streaming {
-    type Output = ExtendedStreamingLowessBuilder<T>;
+    type Output = ParallelStreamingLowessBuilder<T>;
 
     fn convert(builder: LowessBuilder<T>) -> Self::Output {
+        // Determine parallel mode: user choice OR default to true for fastLowess Streaming
+        let parallel = builder.parallel.unwrap_or(true);
+
         // Delegate to base implementation to create base builder
-        let base = <BaseStreaming as LowessAdapter<T>>::convert(builder);
+        let mut base = <BaseStreaming as LowessAdapter<T>>::convert(builder);
+        base.parallel = parallel;
 
         // Wrap with extension fields
-        ExtendedStreamingLowessBuilder {
-            base,
-            parallel: true, // Default to parallel (fastLowess)
-        }
+        ParallelStreamingLowessBuilder { base }
     }
 }
 
@@ -147,16 +142,17 @@ impl<T: Float> LowessAdapter<T> for Streaming {
 pub struct Online;
 
 impl<T: Float> LowessAdapter<T> for Online {
-    type Output = ExtendedOnlineLowessBuilder<T>;
+    type Output = ParallelOnlineLowessBuilder<T>;
 
     fn convert(builder: LowessBuilder<T>) -> Self::Output {
+        // Determine parallel mode: user choice OR default to false for fastLowess Online
+        let parallel = builder.parallel.unwrap_or(false);
+
         // Delegate to base implementation to create base builder
-        let base = <BaseOnline as LowessAdapter<T>>::convert(builder);
+        let mut base = <BaseOnline as LowessAdapter<T>>::convert(builder);
+        base.parallel = parallel;
 
         // Wrap with extension fields
-        ExtendedOnlineLowessBuilder {
-            base,
-            parallel: false, // Sequential for lower latency
-        }
+        ParallelOnlineLowessBuilder { base }
     }
 }

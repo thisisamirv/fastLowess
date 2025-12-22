@@ -112,32 +112,34 @@ use std::result::Result;
 
 /// Builder for streaming LOWESS processor with parallel support.
 #[derive(Debug, Clone)]
-pub struct ExtendedStreamingLowessBuilder<T: Float> {
+pub struct ParallelStreamingLowessBuilder<T: Float> {
     /// Base builder from the lowess crate
     pub base: StreamingLowessBuilder<T>,
-
-    /// Whether to use parallel execution (fastLowess extension)
-    pub parallel: bool,
 }
 
-impl<T: Float> Default for ExtendedStreamingLowessBuilder<T> {
+impl<T: Float> Default for ParallelStreamingLowessBuilder<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Float> ExtendedStreamingLowessBuilder<T> {
+impl<T: Float> ParallelStreamingLowessBuilder<T> {
     /// Create a new streaming LOWESS builder with default parameters.
     fn new() -> Self {
-        Self {
-            base: StreamingLowessBuilder::default(),
-            parallel: true,
-        }
+        let mut base = StreamingLowessBuilder::default();
+        base.parallel = true; // Default to parallel (fastLowess)
+        Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
+        self.base.parallel = parallel;
+        self
+    }
+
+    /// Set seed for random number generation.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.base = self.base.seed(seed);
         self
     }
 
@@ -239,11 +241,11 @@ impl<T: Float> ExtendedStreamingLowessBuilder<T> {
 // ============================================================================
 
 /// Streaming LOWESS processor with parallel support.
-pub struct ExtendedStreamingLowess<T: Float> {
+pub struct ParallelStreamingLowess<T: Float> {
     processor: StreamingLowess<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowess<T> {
+impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowess<T> {
     /// Process a chunk of data.
     pub fn process_chunk(&mut self, x: &[T], y: &[T]) -> Result<LowessResult<T>, LowessError> {
         self.processor.process_chunk(x, y)
@@ -255,9 +257,9 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowess<T> {
     }
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowessBuilder<T> {
+impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowessBuilder<T> {
     /// Build the streaming processor.
-    pub fn build(self) -> Result<ExtendedStreamingLowess<T>, LowessError> {
+    pub fn build(self) -> Result<ParallelStreamingLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion
         if let Some(ref err) = self.base.deferred_error {
             return Err(err.clone());
@@ -266,7 +268,7 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowessBuilder<T>
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.base.clone();
 
-        if self.parallel {
+        if builder.parallel {
             builder.custom_smooth_pass = Some(smooth_pass_parallel);
         } else {
             builder.custom_smooth_pass = None;
@@ -274,6 +276,6 @@ impl<T: Float + Debug + Send + Sync + 'static> ExtendedStreamingLowessBuilder<T>
 
         let processor = builder.build()?;
 
-        Ok(ExtendedStreamingLowess { processor })
+        Ok(ParallelStreamingLowess { processor })
     }
 }

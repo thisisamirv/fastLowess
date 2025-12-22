@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+
+- Added `seed(u64)` method to all builders for reproducible cross-validation results.
+- Integrated `parallel(bool)` directly into the core `LowessBuilder`, simplifying the interface for enabling parallel execution.
+- Added tests for ensuring consistency between serial and parallel execution.
+
+### Changed
+
+- Renamed `Extended*LowessBuilder` structs to `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`), given their changed behavior.
+- Simplified extended builders by leveraging core crate fields for `parallel` and `seed` configuration.
+- Standardized method names and parameter propagation across all execution adapters.
+- Updated `lowess` dependency to v0.6.0.
+
 ## [0.2.2]
 
 ### Changed
