@@ -73,18 +73,26 @@
 //! `Lowess` builder. Direct usage of `BatchLowess` is possible but not
 //! the primary interface.
 
-use crate::input::LowessInput;
+// External dependencies
+use num_traits::Float;
+use std::fmt::Debug;
+use std::result::Result;
+
+// Export dependencies from lowess crate
 use lowess::internals::adapters::batch::BatchLowessBuilder;
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
-use lowess::internals::evaluation::cv::CVMethod;
+use lowess::internals::evaluation::cv::CVKind;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::BoundaryPolicy;
-use num_traits::Float;
-use std::fmt::Debug;
-use std::result::Result;
+
+// Internal dependencies
+use crate::engine::executor::smooth_pass_parallel;
+use crate::evaluation::cv::cv_pass_parallel;
+use crate::evaluation::intervals::interval_pass_parallel;
+use crate::input::LowessInput;
 
 // ============================================================================
 // Extended Batch LOWESS Builder
@@ -119,12 +127,6 @@ impl<T: Float> ParallelBatchLowessBuilder<T> {
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.base.parallel = parallel;
-        self
-    }
-
-    /// Set seed for random number generation.
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.base = self.base.seed(seed);
         self
     }
 
@@ -221,8 +223,8 @@ impl<T: Float> ParallelBatchLowessBuilder<T> {
     }
 
     /// Set the cross-validation method.
-    pub fn cv_method(mut self, method: CVMethod) -> Self {
-        self.base = self.base.cv_method(method);
+    pub fn cv_kind(mut self, method: CVKind) -> Self {
+        self.base = self.base.cv_kind(method);
         self
     }
 
@@ -268,10 +270,9 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelBatchLowess<T> {
         let mut builder = self.config.base;
 
         if builder.parallel {
-            builder.custom_smooth_pass = Some(crate::engine::executor::smooth_pass_parallel);
-            builder.custom_cv_pass = Some(crate::evaluation::cv::cv_pass_parallel);
-            builder.custom_interval_pass =
-                Some(crate::evaluation::intervals::interval_pass_parallel);
+            builder.custom_smooth_pass = Some(smooth_pass_parallel);
+            builder.custom_cv_pass = Some(cv_pass_parallel);
+            builder.custom_interval_pass = Some(interval_pass_parallel);
         } else {
             builder.custom_smooth_pass = None;
             builder.custom_cv_pass = None;

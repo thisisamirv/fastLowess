@@ -18,7 +18,7 @@
 
 use fastLowess::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), LowessError> {
     println!("{}", "=".repeat(80));
     println!("LOWESS Online Smoothing - Comprehensive Examples");
     println!("{}", "=".repeat(80));
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
 
 /// Example 1: Basic Streaming Processing
 /// Demonstrates incremental data processing with online LOWESS
-fn example_1_basic_streaming() -> Result<()> {
+fn example_1_basic_streaming() -> Result<(), LowessError> {
     println!("Example 1: Basic Streaming Processing");
     println!("{}", "-".repeat(80));
 
@@ -108,7 +108,7 @@ fn example_1_basic_streaming() -> Result<()> {
 
 /// Example 2: Real-Time Sensor Data Simulation
 /// Simulates processing temperature sensor readings in real-time
-fn example_2_sensor_data_simulation() -> Result<()> {
+fn example_2_sensor_data_simulation() -> Result<(), LowessError> {
     println!("Example 2: Real-Time Sensor Data Simulation");
     println!("{}", "-".repeat(80));
     println!("Simulating temperature sensor readings with noise...\n");
@@ -129,7 +129,7 @@ fn example_2_sensor_data_simulation() -> Result<()> {
     let mut processor = Lowess::<f64>::new()
         .fraction(0.4)
         .iterations(3) // More iterations for noisy sensor data
-        .robustness_method(RobustnessMethod::Bisquare)
+        .robustness_method(Bisquare)
         .return_residuals()
         .adapter(Online)
         .window_capacity(12) // Half-day window
@@ -177,7 +177,7 @@ fn example_2_sensor_data_simulation() -> Result<()> {
 
 /// Example 3: Outlier Handling in Online Mode
 /// Demonstrates how online LOWESS handles outliers with robustness iterations
-fn example_3_outlier_handling() -> Result<()> {
+fn example_3_outlier_handling() -> Result<(), LowessError> {
     println!("Example 3: Outlier Handling in Online Mode");
     println!("{}", "-".repeat(80));
 
@@ -202,7 +202,7 @@ fn example_3_outlier_handling() -> Result<()> {
     let mut processor = Lowess::<f64>::new()
         .fraction(0.5)
         .iterations(5)
-        .robustness_method(RobustnessMethod::Bisquare)
+        .robustness_method(Bisquare)
         .return_residuals()
         .adapter(Online)
         .window_capacity(6)
@@ -224,7 +224,7 @@ fn example_3_outlier_handling() -> Result<()> {
     let mut processor = Lowess::<f64>::new()
         .fraction(0.5)
         .iterations(5)
-        .robustness_method(RobustnessMethod::Talwar)
+        .robustness_method(Talwar)
         .return_residuals()
         .adapter(Online)
         .window_capacity(6)
@@ -257,7 +257,7 @@ fn example_3_outlier_handling() -> Result<()> {
 
 /// Example 4: Window Size Comparison
 /// Shows how different window sizes affect smoothing behavior
-fn example_4_window_size_comparison() -> Result<()> {
+fn example_4_window_size_comparison() -> Result<(), LowessError> {
     println!("Example 4: Window Size Comparison");
     println!("{}", "-".repeat(80));
 
@@ -314,7 +314,7 @@ fn example_4_window_size_comparison() -> Result<()> {
 
 /// Example 5: Memory-Bounded Processing
 /// Demonstrates efficient processing for embedded/resource-constrained systems
-fn example_5_memory_bounded_processing() -> Result<()> {
+fn example_5_memory_bounded_processing() -> Result<(), LowessError> {
     println!("Example 5: Memory-Bounded Processing (Embedded Systems)");
     println!("{}", "-".repeat(80));
 
@@ -377,7 +377,7 @@ fn example_5_memory_bounded_processing() -> Result<()> {
 
 /// Example 6: Sliding Window Behavior
 /// Demonstrates how the sliding window processes sequential data
-fn example_6_sliding_window_behavior() -> Result<()> {
+fn example_6_sliding_window_behavior() -> Result<(), LowessError> {
     println!("Example 6: Sliding Window Behavior");
     println!("{}", "-".repeat(80));
     println!("Demonstrating how the window slides through the data stream...\n");
@@ -457,7 +457,7 @@ fn example_6_sliding_window_behavior() -> Result<()> {
 
 /// Example 7: Parallel Online Benchmark
 /// Measure execution time for a large dataset using the parallel Online adapter
-fn example_7_parallel_benchmark() -> Result<()> {
+fn example_7_parallel_benchmark() -> Result<(), LowessError> {
     println!("Example 7: Benchmark (Parallel Online)");
     println!("{}", "-".repeat(80));
 
@@ -499,7 +499,7 @@ fn example_7_parallel_benchmark() -> Result<()> {
 
 /// Example 8: Sequential Online Benchmark
 /// Measure execution time for a large dataset using the sequential Online adapter
-fn example_8_sequential_benchmark() -> Result<()> {
+fn example_8_sequential_benchmark() -> Result<(), LowessError> {
     println!("Example 8: Benchmark (Sequential Online)");
     println!("{}", "-".repeat(80));
 

@@ -1,10 +1,13 @@
 //! Parallel interval estimation for LOWESS smoothing.
 
+// External dependencies
+use num_traits::Float;
+use rayon::prelude::*;
+
+// Export dependencies from lowess crate
 use lowess::internals::evaluation::intervals::IntervalMethod;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::window::Window;
-use num_traits::Float;
-use rayon::prelude::*;
 
 /// Perform interval estimation in parallel.
 pub fn interval_pass_parallel<T>(

@@ -11,7 +11,7 @@ use fastLowess::prelude::*;
 use ndarray::Array1;
 use std::time::Instant;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), LowessError> {
     println!("{}", "=".repeat(80));
     println!("fastLowess Parallel Smoothing Examples");
     println!("{}", "=".repeat(80));
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
 /// Example 1: Parallel Execution
 /// Demonstrates the default parallel execution mode
-fn example_1_parallel_execution() -> Result<()> {
+fn example_1_parallel_execution() -> Result<(), LowessError> {
     println!("Example 1: Parallel Execution");
     println!("{}", "-".repeat(80));
 
@@ -61,7 +61,7 @@ fn example_1_parallel_execution() -> Result<()> {
 
 /// Example 2: Sequential Fallback
 /// Demonstrates explicitly disabling parallelism
-fn example_2_sequential_fallback() -> Result<()> {
+fn example_2_sequential_fallback() -> Result<(), LowessError> {
     println!("Example 2: Sequential Fallback");
     println!("{}", "-".repeat(80));
 
@@ -91,7 +91,7 @@ fn example_2_sequential_fallback() -> Result<()> {
 
 /// Example 3: NdArray Integration
 /// Demonstrates direct usage with ndarray types
-fn example_3_ndarray_integration() -> Result<()> {
+fn example_3_ndarray_integration() -> Result<(), LowessError> {
     println!("Example 3: NdArray Integration");
     println!("{}", "-".repeat(80));
 
@@ -121,7 +121,7 @@ fn example_3_ndarray_integration() -> Result<()> {
 
 /// Example 4: Robust Parallel Smoothing
 /// Demonstrates parallel execution with robustness iterations
-fn example_4_robust_parallel() -> Result<()> {
+fn example_4_robust_parallel() -> Result<(), LowessError> {
     println!("Example 4: Robust Parallel Smoothing");
     println!("{}", "-".repeat(80));
 
@@ -139,7 +139,7 @@ fn example_4_robust_parallel() -> Result<()> {
     let model = Lowess::new()
         .fraction(0.1)
         .iterations(3)
-        .robustness_method(RobustnessMethod::Bisquare)
+        .robustness_method(Bisquare)
         .return_robustness_weights()
         .adapter(Batch)
         .parallel(true)
@@ -159,7 +159,7 @@ fn example_4_robust_parallel() -> Result<()> {
 
 /// Example 5: Cross-Validation for Parameter Selection
 /// Automatic selection of optimal smoothing fraction using parallel CV
-fn example_5_cross_validation() -> Result<()> {
+fn example_5_cross_validation() -> Result<(), LowessError> {
     println!("Example 5: Cross-Validation for Parameter Selection (Parallel)");
     println!("{}", "-".repeat(80));
 
@@ -172,11 +172,7 @@ fn example_5_cross_validation() -> Result<()> {
     // Test multiple fractions and select the best one using parallel execution
     let start = Instant::now();
     let model = Lowess::new()
-        .cross_validate(
-            &[0.2, 0.3, 0.5, 0.7],
-            CrossValidationStrategy::KFold,
-            Some(5),
-        )
+        .cross_validate(KFold(5, &[0.2, 0.3, 0.5, 0.7]))
         .iterations(2)
         .adapter(Batch)
         .parallel(true)

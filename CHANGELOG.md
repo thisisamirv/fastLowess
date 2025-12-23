@@ -9,16 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added `seed(u64)` method to all builders for reproducible cross-validation results.
 - Integrated `parallel(bool)` directly into the core `LowessBuilder`, simplifying the interface for enabling parallel execution.
 - Added tests for ensuring consistency between serial and parallel execution.
 
 ### Changed
 
 - Renamed `Extended*LowessBuilder` structs to `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`), given their changed behavior.
-- Simplified extended builders by leveraging core crate fields for `parallel` and `seed` configuration.
+- Simplified extended builders by leveraging core crate field for `parallel` configuration.
 - Standardized method names and parameter propagation across all execution adapters.
+- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of the enum types themselves, simplifying API usage.
 - Updated `lowess` dependency to v0.6.0.
+
+### Removed
+
+- Removed `Adapter`, `BoundaryPolicy`, `CrossValidationStrategy`, `MergeStrategy`, `RobustnessMethod`, `UpdateMode`, `WeightFunction`, and `ZeroWeightFallback` type exports from `prelude`.
+- Removed the `type Result<T>` alias (previously in `api.rs` and exported via prelude) which shadowed `std::result::Result`. This alias caused ambiguity by implicitly binding `LowessError`. We now strictly follow Rust idioms: explicit `Result<LowessResult<T>, LowessError>` return types using the standard library `Result`.
 
 ## [0.2.2]
 

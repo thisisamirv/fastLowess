@@ -65,7 +65,7 @@
 //! let result = model.fit(&x, &y)?;
 //!
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -94,25 +94,26 @@
 //!
 //! // Build model with all features enabled
 //! let model = Lowess::new()
-//!     .fraction(0.5)                                  // Use 50% of data for each local fit
-//!     .iterations(3)                                  // 3 robustness iterations
-//!     .weight_function(WeightFunction::Tricube)       // Kernel function
-//!     .robustness_method(RobustnessMethod::Bisquare)  // Outlier handling
-//!     .delta(0.01)                                    // Interpolation optimization
-//!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)  // Fallback policy
-//!     .auto_converge(1e-6)                            // Auto-convergence threshold
-//!     .confidence_intervals(0.95)                     // 95% confidence intervals
-//!     .prediction_intervals(0.95)                     // 95% prediction intervals
-//!     .return_diagnostics()                           // Fit quality metrics
-//!     .return_residuals()                             // Include residuals
-//!     .return_robustness_weights()                    // Include robustness weights
-//!     .adapter(Batch)                                 // Batch adapter
-//!     .parallel(true)                                 // Enable parallel execution
+//!     .fraction(0.5)                                   // Use 50% of data for each local fit
+//!     .iterations(3)                                   // 3 robustness iterations
+//!     .weight_function(Tricube)                        // Kernel function
+//!     .robustness_method(Bisquare)                     // Outlier handling
+//!     .delta(0.01)                                     // Interpolation optimization
+//!     .zero_weight_fallback(UseLocalMean)              // Fallback policy
+//!     .auto_converge(1e-6)                             // Auto-convergence threshold
+//!     .confidence_intervals(0.95)                      // 95% confidence intervals
+//!     .prediction_intervals(0.95)                      // 95% prediction intervals
+//!     .return_diagnostics()                            // Fit quality metrics
+//!     .return_residuals()                              // Include residuals
+//!     .return_robustness_weights()                     // Include robustness weights
+//!     .cross_validate(KFold(5, &[0.3, 0.7]).seed(123)) // K-fold CV with 5 folds and 2 fraction options
+//!     .adapter(Batch)                                  // Batch adapter
+//!     .parallel(true)                                  // Enable parallel execution
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -143,6 +144,50 @@
 //!     8.00    15.77990     0.408300    14.979631    16.580167    14.789441    16.770356    -0.079899     1.0000
 //! ```
 //!
+//! ### Result and Error Handling
+//!
+//! The `fit` method returns a `Result<LowessResult<T>, LowessError>`.
+//!
+//! - **`Ok(LowessResult<T>)`**: Contains the smoothed data and diagnostics.
+//! - **`Err(LowessError)`**: Indicates a failure (e.g., mismatched input lengths, insufficient data).
+//!
+//! The `?` operator is idiomatic:
+//!
+//! ```rust
+//! use lowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! let model = Lowess::new().adapter(Batch).build()?;
+//!
+//! let result = model.fit(&x, &y)?;
+//! // or to be more explicit:
+//! // let result: LowessResult<f64> = model.fit(&x, &y)?;
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! But you can also handle results explicitly:
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! let model = Lowess::new().adapter(Batch).build()?;
+//!
+//! match model.fit(&x, &y) {
+//!     Ok(result) => {
+//!         // result is LowessResult<f64>
+//!         println!("Smoothed: {:?}", result.y);
+//!     }
+//!     Err(e) => {
+//!         // e is LowessError
+//!         eprintln!("Fitting failed: {}", e);
+//!     }
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
 //! ## Minimal Usage (no_std / Embedded)
 //!
 //! The crate supports `no_std` environments for embedded devices and resource-constrained systems.
@@ -160,7 +205,7 @@
 //! use fastLowess::prelude::*;
 //!
 //! // In an embedded context (e.g., sensor data processing)
-//! fn smooth_sensor_data() -> Result<()> {
+//! fn smooth_sensor_data() -> Result<(), LowessError> {
 //!     // Small dataset from sensor readings
 //!     let x = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0];
 //!     let y = vec![2.1, 3.9, 6.2, 7.8, 10.1];
@@ -211,7 +256,7 @@
 //! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output           | Batch, Streaming |
 //! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
 //! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
-//! | **cross_validate**                         | None                                          | Fractions + method   | Automated bandwidth selection                    | Batch            |
+//! | **cross_validate**                         | None                                          | Method (fractions)   | Automated bandwidth selection                    | Batch            |
 //! | **chunk_size**                             | 5000                                          | [10, ∞)              | Points per chunk for streaming                   | Streaming        |
 //! | **overlap**                                | 500                                           | [0, chunk_size)      | Overlapping points between chunks                | Streaming        |
 //! | **merge_strategy**                         | `Average`                                     | 4 strategies         | How to merge overlapping regions                 | Streaming        |
@@ -253,17 +298,17 @@
 //!
 //! // Build the model with custom configuration
 //! let model = Lowess::new()
-//!     .fraction(0.3)                                  // Smoothing span
-//!     .iterations(5)                                  // Robustness iterations
-//!     .weight_function(WeightFunction::Tricube)       // Kernel function
-//!     .robustness_method(RobustnessMethod::Bisquare)  // Outlier handling
+//!     .fraction(0.3)               // Smoothing span
+//!     .iterations(5)               // Robustness iterations
+//!     .weight_function(Tricube)    // Kernel function
+//!     .robustness_method(Bisquare) // Outlier handling
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -317,7 +362,7 @@
 //!
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -384,7 +429,7 @@
 //! // Total processed = all chunks + finalize
 //! let total = result1.y.len() + result2.y.len() + final_result.y.len();
 //! println!("Processed {} points total", total);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Use streaming when:**
@@ -416,7 +461,7 @@
 //!         println!("Latest smoothed value: {:.2}", result.smoothed);
 //!     }
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Use online when:**
@@ -452,7 +497,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing fraction:**
@@ -489,7 +534,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing iterations:**
@@ -519,7 +564,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **When to use delta:**
@@ -548,7 +593,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Performance:**
@@ -576,7 +621,7 @@
 //!
 //! // result.y is an Array1<f64>
 //! let smoothed_values = result.y;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Benefits:**
@@ -597,12 +642,12 @@
 //! // Build model with Epanechnikov kernel
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .weight_function(WeightFunction::Epanechnikov)
+//!     .weight_function(Epanechnikov)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Kernel selection guide:**
@@ -670,7 +715,7 @@
 //! let model = Lowess::new()
 //!     .fraction(0.5)
 //!     .iterations(3)
-//!     .robustness_method(RobustnessMethod::Talwar)
+//!     .robustness_method(Talwar)
 //!     .return_robustness_weights()  // Include weights in output
 //!     .adapter(Batch)
 //!     .build()?;
@@ -686,7 +731,7 @@
 //!         }
 //!     }
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -713,12 +758,12 @@
 //! // Build model with custom zero-weight fallback
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+//!     .zero_weight_fallback(UseLocalMean)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Fallback options:**
@@ -746,7 +791,7 @@
 //! if let Some(residuals) = result.residuals {
 //!     println!("Residuals: {:?}", residuals);
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ### Boundary Policy
@@ -766,12 +811,12 @@
 //! // Use reflective padding for better edge handling
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .boundary_policy(BoundaryPolicy::Reflect)
+//!     .boundary_policy(Reflect)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing a policy:**
@@ -800,8 +845,452 @@
 //!
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
+//! ### Return Robustness Weights
+//!
+//! Include final robustness weights in the output.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .iterations(3)
+//!     .return_robustness_weights()
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! let result = model.fit(&x, &y)?;
+//! // Access robustness weights
+//! if let Some(weights) = result.robustness_weights {
+//!     println!("Robustness weights: {:?}", weights);
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ### Diagnostics (Batch and Streaming)
+//!
+//! Compute diagnostic statistics to assess fit quality.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! // Build model with diagnostics
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .return_diagnostics()
+//!     .return_residuals()
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y)?;
+//!
+//! if let Some(diag) = &result.diagnostics {
+//!     println!("RMSE: {:.4}", diag.rmse);
+//!     println!("MAE: {:.4}", diag.mae);
+//!     println!("R²: {:.4}", diag.r_squared);
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! RMSE: 0.1234
+//! MAE: 0.0987
+//! R^2: 0.9876
+//! ```
+//!
+//! **Available diagnostics:**
+//! - **RMSE**: Root mean squared error
+//! - **MAE**: Mean absolute error
+//! - **R^2**: Coefficient of determination
+//! - **Residual SD**: Standard deviation of residuals
+//! - **AIC/AICc**: Information criteria (when applicable)
+//!
+//! ### Confidence Intervals (Batch only)
+//!
+//! Confidence intervals quantify uncertainty in the smoothed mean function.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! // Build model with confidence intervals
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .confidence_intervals(0.95)  // 95% confidence intervals
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y)?;
+//!
+//! // Access confidence intervals
+//! for i in 0..x.len() {
+//!     println!(
+//!         "x={:.1}: y={:.2} [{:.2}, {:.2}]",
+//!         x[i],
+//!         result.y[i],
+//!         result.confidence_lower.as_ref().unwrap()[i],
+//!         result.confidence_upper.as_ref().unwrap()[i]
+//!     );
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! x=1.0: y=2.00 [1.85, 2.15]
+//! x=2.0: y=4.10 [3.92, 4.28]
+//! x=3.0: y=5.90 [5.71, 6.09]
+//! x=4.0: y=8.20 [8.01, 8.39]
+//! x=5.0: y=9.80 [9.65, 9.95]
+//! ```
+//!
+//! ### Prediction Intervals (Batch only)
+//!
+//! Prediction intervals quantify where new individual observations will likely fall.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+//! # let y = vec![2.1, 3.8, 6.2, 7.9, 10.3, 11.8, 14.1, 15.7];
+//!
+//! // Build model with both interval types
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .confidence_intervals(0.95)
+//!     .prediction_intervals(0.95)  // Both can be enabled
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y)?;
+//! println!("{}", result);
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 8
+//!   Fraction: 0.5
+//!
+//! Smoothed Data:
+//!        X     Y_smooth      Std_Err   Conf_Lower   Conf_Upper   Pred_Lower   Pred_Upper
+//!   ----------------------------------------------------------------------------------
+//!     1.00     2.01963     0.389365     1.256476     2.782788     1.058911     2.980353
+//!     2.00     4.00251     0.345447     3.325438     4.679589     3.108641     4.896386
+//!     3.00     5.99959     0.423339     5.169846     6.829335     4.985168     7.014013
+//!     4.00     8.09859     0.489473     7.139224     9.057960     6.975666     9.221518
+//!     5.00    10.03881     0.551687     8.957506    11.120118     8.810073    11.267551
+//!     6.00    12.02872     0.539259    10.971775    13.085672    10.821364    13.236083
+//!     7.00    13.89828     0.371149    13.170829    14.625733    12.965670    14.830892
+//!     8.00    15.77990     0.408300    14.979631    16.580167    14.789441    16.770356
+//! ```
+//!
+//! **Interval types:**
+//! - **Confidence intervals**: Uncertainty in the smoothed mean
+//!   - Narrower intervals
+//!   - Use for: Understanding precision of the trend estimate
+//! - **Prediction intervals**: Uncertainty for new observations
+//!   - Wider intervals (includes data scatter + estimation uncertainty)
+//!   - Use for: Forecasting where new data points will fall
+//!
+//! ### Cross-Validation (Batch only)
+//!
+//! Automatically select the optimal smoothing fraction using cross-validation.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+//! # let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
+//!
+//! // Build model with K-fold cross-validation
+//! let model = Lowess::new()
+//!     .cross_validate(KFold(5, &[0.2, 0.3, 0.5, 0.7]).seed(42)) // K-fold CV with 5 folds and 4 fraction options
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y)?;
+//!
+//! println!("Selected fraction: {}", result.fraction_used);
+//! println!("CV scores: {:?}", result.cv_scores);
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! Selected fraction: 0.5
+//! CV scores: Some([0.123, 0.098, 0.145, 0.187])
+//! ```
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+//! # let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
+//!
+//! // Build model with leave-one-out cross-validation
+//! let model = Lowess::new()
+//!     .cross_validate(LOOCV(&[0.2, 0.3, 0.5, 0.7])) // Leave-one-out CV with 4 fraction options
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! let result = model.fit(&x, &y)?;
+//! println!("{}", result);
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! Summary:
+//!   Data points: 20
+//!   Fraction: 0.5 (selected via LOOCV)
+//!
+//! Smoothed Data:
+//!        X     Y_smooth
+//!   --------------------
+//!     1.00     3.00000
+//!     2.00     5.00000
+//!     3.00     7.00000
+//!   ... (17 more rows)
+//! ```
+//!
+//! **Choosing a Method:**
+//!
+//! * **K-Fold**: Good balance between accuracy and speed. Common choices:
+//!   - k=5: Fast, reasonable accuracy
+//!   - k=10: Standard choice, good accuracy
+//!   - k=20: Higher accuracy, slower
+//!
+//! * **LOOCV**: Maximum accuracy but computationally expensive (O(n^2) evaluations).
+//!   Best for small datasets (n < 100) where accuracy is critical.
+//!
+//! ### Chunk Size (Streaming Adapter)
+//!
+//! Set the number of points to process in each chunk for the Streaming adapter.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
+//!     .adapter(Streaming)
+//!     .chunk_size(10000)  // Process 10K points at a time
+//!     .overlap(1000)      // 1K point overlap
+//!     .build()?;
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! **Typical values:**
+//! - Small chunks: 1,000-5,000 (low memory, more overhead)
+//! - Medium chunks: 5,000-20,000 (balanced, recommended)
+//! - Large chunks: 20,000-100,000 (high memory, less overhead)
+//!
+//! ### Overlap (Streaming Adapter)
+//!
+//! Set the number of overlapping points between chunks for the Streaming adapter.
+//!
+//! **Rule of thumb:** `overlap = 2 × window_size`, where `window_size = fraction × chunk_size`
+//!
+//! Larger overlap provides better boundary handling but increases computation.
+//! Must be less than `chunk_size`.
+//!
+//! ### Merge Strategy (Streaming Adapter)
+//!
+//! Control how overlapping values are merged between chunks in the Streaming adapter.
+//!
+//! - **`WeightedAverage`** (default): Distance-weighted average
+//! - **`Average`**: Simple average
+//! - **`TakeFirst`**: Use value from first chunk
+//! - **`TakeLast`**: Use value from last chunk
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
+//!     .merge_strategy(WeightedAverage)
+//!     .adapter(Streaming)
+//!     .build()?;
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ### Window Capacity (Online Adapter)
+//!
+//! Set the maximum number of points to retain in the sliding window for the Online adapter.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
+//!     .adapter(Online)
+//!     .window_capacity(500)  // Keep last 500 points
+//!     .build()?;
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! **Typical values:**
+//! - Small windows: 100-500 (fast, less smooth)
+//! - Medium windows: 500-2000 (balanced)
+//! - Large windows: 2000-10000 (slow, very smooth)
+//!
+//! ### Min Points (Online Adapter)
+//!
+//! Set the minimum number of points required before smoothing starts in the Online adapter.
+//!
+//! Must be at least 2 (required for linear regression) and at most `window_capacity`.
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
+//!     .adapter(Online)
+//!     .window_capacity(100)
+//!     .min_points(10)  // Wait for 10 points before smoothing
+//!     .build()?;
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ### Update Mode (Online Adapter)
+//!
+//! Choose between incremental and full window updates for the Online adapter.
+//!
+//! - **`Incremental`** (default): Fit only the latest point - O(q) per point
+//! - **`Full`**: Re-smooth entire window - O(q^2) per point
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! // High-performance incremental updates
+//! let mut processor = Lowess::new()
+//!     .fraction(0.3)
+//!     .adapter(Online)
+//!     .window_capacity(100)
+//!     .update_mode(Incremental)
+//!     .build()?;
+//!
+//! for i in 0..1000 {
+//!     let x = i as f64;
+//!     let y = 2.0 * x + 1.0;
+//!     if let Some(output) = processor.add_point(x, y)? {
+//!         println!("Smoothed: {}", output.smoothed);
+//!     }
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ### Custom Pass Functions
+//!
+//! Advanced users can provide custom execution functions via `custom_smooth_pass`,
+//! `custom_cv_pass`, `custom_interval_pass`, and `custom_fit_pass`.
+//!
+//! This allows replacing the default algorithms with custom implementations for:
+//! - Parallel execution strategies (leveraging external crates like `rayon`)
+//! - GPU acceleration (via the `backend` field and `FitPassFn`)
+//! - Custom regression models or statistical validations
+//! - Specialized hardware optimizations
+//!
+//! See the `SmoothPassFn`, `CVPassFn`, `IntervalPassFn`, and `FitPassFn` type
+//! documentation for function signatures. These are advanced features mainly
+//! for library developers and specialized integration.
+//!
+//! ## A comprehensive example showing multiple features:
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//!
+//! // Generate sample data with outliers
+//! let x: Vec<f64> = (1..=50).map(|i| i as f64).collect();
+//! let mut y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0 + (xi * 0.5).sin() * 5.0).collect();
+//! y[10] = 100.0;  // Add an outlier
+//! y[25] = -50.0;  // Add another outlier
+//!
+//! // Build the model with comprehensive configuration
+//! let model = Lowess::new()
+//!     .fraction(0.3)                                  // Moderate smoothing
+//!     .iterations(5)                                  // Strong outlier resistance
+//!     .weight_function(Tricube)                       // Default kernel
+//!     .robustness_method(Bisquare)                    // Bisquare robustness
+//!     .confidence_intervals(0.95)                     // 95% confidence intervals
+//!     .prediction_intervals(0.95)                     // 95% prediction intervals
+//!     .return_diagnostics()                           // Include diagnostics
+//!     .return_residuals()                             // Include residuals
+//!     .return_robustness_weights()                    // Include robustness weights
+//!     .zero_weight_fallback(UseLocalMean)             // Fallback policy
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! // Fit the model to the data
+//! let result = model.fit(&x, &y)?;
+//!
+//! // Examine results
+//! println!("Smoothed {} points", result.y.len());
+//!
+//! // Check diagnostics
+//! if let Some(diag) = &result.diagnostics {
+//!     println!("Fit quality:");
+//!     println!("  RMSE: {:.4}", diag.rmse);
+//!     println!("  R²: {:.4}", diag.r_squared);
+//! }
+//!
+//! // Identify outliers
+//! if let Some(weights) = &result.robustness_weights {
+//!     println!("\nOutliers detected:");
+//!     for (i, &w) in weights.iter().enumerate() {
+//!         if w < 0.1 {
+//!             println!("  Point {}: y={:.1}, weight={:.3}", i, y[i], w);
+//!         }
+//!     }
+//! }
+//!
+//! // Show confidence intervals for first few points
+//! println!("\nFirst 5 points with intervals:");
+//! for i in 0..5 {
+//!     println!(
+//!         "  x={:.0}: {:.2} [{:.2}, {:.2}] | [{:.2}, {:.2}]",
+//!         x[i],
+//!         result.y[i],
+//!         result.confidence_lower.as_ref().unwrap()[i],
+//!         result.confidence_upper.as_ref().unwrap()[i],
+//!         result.prediction_lower.as_ref().unwrap()[i],
+//!         result.prediction_upper.as_ref().unwrap()[i]
+//!     );
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ```text
+//! Smoothed 50 points
+//! Fit quality:
+//!   RMSE: 0.5234
+//!   R^2: 0.9987
+//!
+//! Outliers detected:
+//!   Point 10: y=100.0, weight=0.000
+//!   Point 25: y=-50.0, weight=0.000
+//!
+//! First 5 points with intervals:
+//!   x=1: 3.12 [2.98, 3.26] | [2.45, 3.79]
+//!   x=2: 5.24 [5.10, 5.38] | [4.57, 5.91]
+//!   x=3: 7.36 [7.22, 7.50] | [6.69, 8.03]
+//!   x=4: 9.48 [9.34, 9.62] | [8.81, 10.15]
+//!   x=5: 11.60 [11.46, 11.74] | [10.93, 12.27]
+//! ```
+//!
+//! ## References
+//!
+//! - Cleveland, W. S. (1979). "Robust Locally Weighted Regression and Smoothing Scatterplots"
+//! - Cleveland, W. S. (1981). "LOWESS: A Program for Smoothing Scatterplots by Robust Locally Weighted Regression"
+//!
+//! ## License
+//!
+//! See the repository for license information and contribution guidelines.
 
 // ============================================================================
 // Internal Modules
@@ -840,19 +1329,31 @@ mod input;
 // ============================================================================
 
 /// Standard fastLowess prelude.
-///
-/// This module is intended to be wildcard-imported for convenient access
-/// to the most commonly used types:
-///
-/// ```rust
-/// use fastLowess::prelude::*;
-/// ```
 pub mod prelude {
     pub use crate::api::{
         Adapter::{Batch, Online, Streaming},
-        BoundaryPolicy, CrossValidationStrategy, LowessBuilder as Lowess, LowessError,
-        LowessResult, MergeStrategy, Result, RobustnessMethod, UpdateMode, WeightFunction,
-        ZeroWeightFallback,
+        BoundaryPolicy::Extend,
+        BoundaryPolicy::Reflect,
+        BoundaryPolicy::Zero,
+        KFold, LOOCV, LowessBuilder as Lowess, LowessError, LowessResult,
+        MergeStrategy::Average,
+        MergeStrategy::TakeFirst,
+        MergeStrategy::WeightedAverage,
+        RobustnessMethod::Bisquare,
+        RobustnessMethod::Huber,
+        RobustnessMethod::Talwar,
+        UpdateMode::Full,
+        UpdateMode::Incremental,
+        WeightFunction::Biweight,
+        WeightFunction::Cosine,
+        WeightFunction::Epanechnikov,
+        WeightFunction::Gaussian,
+        WeightFunction::Triangle,
+        WeightFunction::Tricube,
+        WeightFunction::Uniform,
+        ZeroWeightFallback::ReturnNone,
+        ZeroWeightFallback::ReturnOriginal,
+        ZeroWeightFallback::UseLocalMean,
     };
 }
 

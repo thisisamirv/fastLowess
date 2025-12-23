@@ -149,7 +149,7 @@ Lowess::new()
     .return_robustness_weights()
 
     // Cross-validation (for parameter selection)
-    .cross_validate(&[0.3, 0.5, 0.7], CrossValidationStrategy::KFold, Some(5))
+    .cross_validate(KFold(5).with_fractions(&[0.3, 0.5, 0.7]))
 
     // Convergence
     .auto_converge(1e-4)

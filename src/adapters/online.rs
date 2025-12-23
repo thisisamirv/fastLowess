@@ -81,10 +81,13 @@
 //! `Lowess` builder. Direct usage of `OnlineLowess` is possible but not
 //! the primary interface.
 
-use crate::engine::executor::smooth_pass_parallel;
-use crate::input::LowessInput;
+// External dependencies
+use num_traits::Float;
+use std::fmt::Debug;
+use std::result::Result;
 
-pub use lowess::internals::adapters::online::OnlineOutput;
+// Export dependencies from lowess crate
+use lowess::internals::adapters::online::OnlineOutput;
 use lowess::internals::adapters::online::{OnlineLowess, OnlineLowessBuilder};
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
@@ -92,9 +95,9 @@ use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::{BoundaryPolicy, UpdateMode};
 
-use num_traits::Float;
-use std::fmt::Debug;
-use std::result::Result;
+// Internal dependencies
+use crate::engine::executor::smooth_pass_parallel;
+use crate::input::LowessInput;
 
 // ============================================================================
 // Extended Online LOWESS Builder
@@ -124,12 +127,6 @@ impl<T: Float> ParallelOnlineLowessBuilder<T> {
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
         self.base.parallel = parallel;
-        self
-    }
-
-    /// Set seed for random number generation.
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.base = self.base.seed(seed);
         self
     }
 

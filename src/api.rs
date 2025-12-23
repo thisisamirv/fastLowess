@@ -38,42 +38,28 @@
 //! This module is the primary public API for the crate. Types and traits
 //! defined here are stable and follow semantic versioning.
 
-use std::result;
-
+// External dependencies
 use num_traits::Float;
 
-// Internal extended adapters
+// Internal dependencies
 use crate::adapters::batch::ParallelBatchLowessBuilder;
 use crate::adapters::online::ParallelOnlineLowessBuilder;
 use crate::adapters::streaming::ParallelStreamingLowessBuilder;
-
-// ============================================================================
-// Re-exports from lowess crate
-// ============================================================================
 
 // Import base marker types for delegation
 use lowess::internals::api::Batch as BaseBatch;
 use lowess::internals::api::Online as BaseOnline;
 use lowess::internals::api::Streaming as BaseStreaming;
 
-// Re-export LowessBuilder and related types from lowess
-pub use lowess::internals::api::{LowessAdapter, LowessBuilder};
-
 // Publicly re-exported types
 pub use lowess::internals::algorithms::regression::ZeroWeightFallback;
 pub use lowess::internals::algorithms::robustness::RobustnessMethod;
-pub use lowess::internals::api::CrossValidationStrategy;
+pub use lowess::internals::api::{LowessAdapter, LowessBuilder};
 pub use lowess::internals::engine::output::LowessResult;
+pub use lowess::internals::evaluation::cv::{KFold, LOOCV};
 pub use lowess::internals::math::kernel::WeightFunction;
 pub use lowess::internals::primitives::errors::LowessError;
 pub use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy, UpdateMode};
-
-// ============================================================================
-// Type Aliases
-// ============================================================================
-
-/// Result type alias for LOWESS operations.
-pub type Result<T> = result::Result<T, LowessError>;
 
 // ============================================================================
 // Adapter Module

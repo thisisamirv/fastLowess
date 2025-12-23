@@ -1,18 +1,21 @@
 //! Parallel cross-validation for LOWESS bandwidth selection.
 
-use lowess::internals::engine::executor::{LowessConfig, LowessExecutor};
-use lowess::internals::evaluation::cv::CVMethod;
+// External dependencies
 use num_traits::Float;
 use rayon::prelude::*;
 use std::cmp::Ordering::Equal;
 use std::fmt::Debug;
+
+// Export dependencies from lowess crate
+use lowess::internals::engine::executor::{LowessConfig, LowessExecutor};
+use lowess::internals::evaluation::cv::CVKind;
 
 /// Perform cross-validation to select the best fraction in parallel.
 pub fn cv_pass_parallel<T>(
     x: &[T],
     y: &[T],
     fractions: &[T],
-    method: CVMethod,
+    method: CVKind,
     config: &LowessConfig<T>,
 ) -> (T, Vec<T>)
 where

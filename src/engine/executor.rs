@@ -73,13 +73,16 @@
 //! adapters. The parallel smoothing function is exported for use by the
 //! high-level API but may change without notice.
 
+// External dependencies
+use num_traits::Float;
+use rayon::prelude::*;
+
+// Export dependencies from lowess crate
 use lowess::internals::algorithms::regression::{
     LinearRegression, Regression, RegressionContext, ZeroWeightFallback,
 };
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::window::Window;
-use num_traits::Float;
-use rayon::prelude::*;
 
 // ============================================================================
 // Parallel Smoothing Function

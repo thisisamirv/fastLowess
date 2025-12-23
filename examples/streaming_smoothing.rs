@@ -19,7 +19,7 @@
 
 use fastLowess::prelude::*;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), LowessError> {
     println!("{}", "=".repeat(80));
     println!("LOWESS Streaming Smoothing - Comprehensive Examples");
     println!("{}", "=".repeat(80));
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
 /// Example 1: Basic Chunked Processing
 /// Demonstrates the fundamental streaming workflow
-fn example_1_basic_chunked_processing() -> Result<()> {
+fn example_1_basic_chunked_processing() -> Result<(), LowessError> {
     println!("Example 1: Basic Chunked Processing");
     println!("{}", "-".repeat(80));
 
@@ -122,7 +122,7 @@ fn example_1_basic_chunked_processing() -> Result<()> {
 
 /// Example 2: Chunk Size Comparison
 /// Shows how different chunk sizes affect processing
-fn example_2_chunk_size_comparison() -> Result<()> {
+fn example_2_chunk_size_comparison() -> Result<(), LowessError> {
     println!("Example 2: Chunk Size Comparison");
     println!("{}", "-".repeat(80));
 
@@ -197,7 +197,7 @@ fn example_2_chunk_size_comparison() -> Result<()> {
 
 /// Example 3: Overlap Strategies
 /// Demonstrates different overlap configurations
-fn example_3_overlap_strategies() -> Result<()> {
+fn example_3_overlap_strategies() -> Result<(), LowessError> {
     println!("Example 3: Overlap Strategies");
     println!("{}", "-".repeat(80));
 
@@ -279,7 +279,7 @@ fn example_3_overlap_strategies() -> Result<()> {
 
 /// Example 4: Large Dataset Processing
 /// Simulates processing a very large dataset
-fn example_4_large_dataset_processing() -> Result<()> {
+fn example_4_large_dataset_processing() -> Result<(), LowessError> {
     println!("Example 4: Large Dataset Processing");
     println!("{}", "-".repeat(80));
 
@@ -364,7 +364,7 @@ fn example_4_large_dataset_processing() -> Result<()> {
 
 /// Example 5: Outlier Handling in Streaming Mode
 /// Demonstrates robust smoothing with chunked data
-fn example_5_outlier_handling() -> Result<()> {
+fn example_5_outlier_handling() -> Result<(), LowessError> {
     println!("Example 5: Outlier Handling in Streaming Mode");
     println!("{}", "-".repeat(80));
 
@@ -388,11 +388,7 @@ fn example_5_outlier_handling() -> Result<()> {
     println!("Dataset: {} points with 3 outliers", n);
     println!("Testing robustness methods:\n");
 
-    let methods = vec![
-        (RobustnessMethod::Bisquare, "Bisquare"),
-        (RobustnessMethod::Huber, "Huber"),
-        (RobustnessMethod::Talwar, "Talwar"),
-    ];
+    let methods = vec![(Bisquare, "Bisquare"), (Huber, "Huber"), (Talwar, "Talwar")];
 
     for (method, name) in methods {
         println!("Using {} robustness:", name);
@@ -453,7 +449,7 @@ fn example_5_outlier_handling() -> Result<()> {
 
 /// Example 6: File-Based Streaming Simulation
 /// Simulates reading from a file and writing results incrementally
-fn example_6_file_simulation() -> Result<()> {
+fn example_6_file_simulation() -> Result<(), LowessError> {
     println!("Example 6: File-Based Streaming Simulation");
     println!("{}", "-".repeat(80));
     println!("Simulating: Read from input.csv -> Smooth -> Write to output.csv\n");
@@ -553,7 +549,7 @@ fn example_6_file_simulation() -> Result<()> {
 
 /// Example 7: Parallel Streaming Benchmark
 /// Measure execution time for a large dataset using the parallel Streaming adapter
-fn example_7_parallel_benchmark() -> Result<()> {
+fn example_7_parallel_benchmark() -> Result<(), LowessError> {
     println!("Example 7: Benchmark (Parallel Streaming)");
     println!("{}", "-".repeat(80));
 
@@ -607,7 +603,7 @@ fn example_7_parallel_benchmark() -> Result<()> {
 
 /// Example 8: Sequential Streaming Benchmark
 /// Measure execution time for a large dataset using the sequential Streaming adapter
-fn example_8_sequential_benchmark() -> Result<()> {
+fn example_8_sequential_benchmark() -> Result<(), LowessError> {
     println!("Example 8: Benchmark (Sequential Streaming)");
     println!("{}", "-".repeat(80));
 
