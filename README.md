@@ -49,33 +49,35 @@ Benchmarked against Python's `statsmodels`. Achieves **91-3914× faster performa
 
 ### Summary
 
+The `fastLowess` crate demonstrates massive performance gains over Python's `statsmodels`, ranging from **136x to over 4300x** speedup. The addition of **parallel execution** (via Rayon) and optimized algorithm defaults makes it exceptionally well-suited for high-throughput data processing and large-scale datasets.
+
+### Category Comparison
+
 | Category         | Matched | Median Speedup | Mean Speedup |
-| :--------------- | :------ | :------------- | :----------- |
-| **Scalability**  | 5       | **819×**       | 1482×        |
-| **Pathological** | 4       | **503×**       | 476×         |
-| **Iterations**   | 6       | **491×**       | 496×         |
-| **Fraction**     | 6       | **464×**       | 447×         |
-| **Financial**    | 4       | **351×**       | 418×         |
-| **Scientific**   | 4       | **345×**       | 404×         |
-| **Genomic**      | 4       | **22×**        | 26×          |
-| **Delta**        | 4       | **5×**         | 6.8×         |
+|------------------|---------|----------------|--------------|
+| **Scalability**  | 5       | **954×**       | 1637×        |
+| **Fraction**     | 6       | **571×**       | 552×         |
+| **Iterations**   | 6       | **564×**       | 567×         |
+| **Pathological** | 4       | **551×**       | 538×         |
+| **Financial**    | 4       | **385×**       | 448×         |
+| **Scientific**   | 4       | **381×**       | 450×         |
+| **Genomic**      | 4       | **23×**        | 27×          |
+| **Delta**        | 4       | **5.7×**       | 7.8×         |
 
-### Top 10 Performance Wins
+### Top 10 Rust Wins
 
-| Benchmark          | statsmodels | fastLowess | Speedup   |
-| :----------------- | :---------- | :--------- | :-------- |
-| scale_100000       | 43.727s     | 11.2ms     | **3914×** |
-| scale_50000        | 11.160s     | 5.74ms     | **1946×** |
-| financial_10000    | 497.1ms     | 0.59ms     | **839×**  |
-| scientific_10000   | 777.2ms     | 0.93ms     | **835×**  |
-| scale_10000        | 663.1ms     | 0.81ms     | **819×**  |
-| clustered          | 267.8ms     | 0.48ms     | **554×**  |
-| scale_5000         | 229.9ms     | 0.42ms     | **554×**  |
-| fraction_0.1       | 227.9ms     | 0.42ms     | **542×**  |
-| fraction_0.05      | 197.2ms     | 0.37ms     | **536×**  |
-| financial_5000     | 170.9ms     | 0.32ms     | **536×**  |
-
-Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmarks) for detailed comparisons.
+| Benchmark        | statsmodels | fastLowess | Speedup   |
+|------------------|-------------|------------|-----------|
+| scale_100000     | 43.73s      | 10.1ms     | **4339×** |
+| scale_50000      | 11.16s      | 5.26ms     | **2122×** |
+| scale_10000      | 663.1ms     | 0.70ms     | **954×**  |
+| scientific_10000 | 777.2ms     | 0.83ms     | **941×**  |
+| financial_10000  | 497.1ms     | 0.56ms     | **885×**  |
+| iterations_0     | 74.2ms      | 0.12ms     | **599×**  |
+| financial_5000   | 170.9ms     | 0.29ms     | **595×**  |
+| scientific_5000  | 268.5ms     | 0.45ms     | **593×**  |
+| fraction_0.2     | 297.0ms     | 0.50ms     | **591×**  |
+| scale_5000       | 229.9ms     | 0.39ms     | **590×**  |
 
 ## Installation
 
@@ -190,26 +192,27 @@ Lowess::new()
 
 ### Backend Comparison
 
-| Backend | Use Case         | Features              | Limitations         |
-|---------|------------------|-----------------------|---------------------|
-| CPU     | General          | All features          | None                |
-| GPU     | High-performance | Very fast             | Only vanilla LOWESS |
+| Backend    | Use Case         | Features              | Limitations         |
+|------------|------------------|-----------------------|---------------------|
+| CPU        | General          | All features          | None                |
+| GPU (beta) | High-performance | Special circumstances | Only vanilla LOWESS |
 
 > [!WARNING]
-> **GPU Backend Limitations**: The GPU backend is currently limited to vanilla LOWESS and does not support all features of the CPU backend:
+> **GPU Backend Limitations**: The GPU backend is currently in **Beta** and is limited to vanilla LOWESS and does not support all features of the CPU backend:
 >
 > - Only Tricube kernel function
 > - Only Bisquare robustness method
 > - Only Batch adapter
 > - No cross-validation
 > - No intervals
-> - No delta optimization
 > - No edge handling (bias at edges, original LOWESS behavior)
 > - No zero-weight fallback
 > - No diagnostics
 > - No streaming or online mode
->
-> The GPU backend eliminates CPU-GPU data transfers during robustness iterations, removing synchronization overhead. **Recommended only for very large datasets** where performance is the main priority and edge bias or other features are not a concern.
+
+1. **CPU Backend (`Backend::CPU`)**: The default and recommended choice. It is faster for all standard dense computations, supports all features (cross-validation, intervals, etc.), and has zero setup overhead.
+
+2. **GPU Backend (`Backend::GPU`)**: Use **only** if you have a massive dataset (> 250,000 points) **AND** you are using the `delta` optimization (e.g., `delta(0.01)`). In this specific "sparse" scenario, the GPU scales better than the CPU. for dense computation, the CPU is still faster.
 
 > [!NOTE]
 > **GPU vs CPU Precision**: Results from the GPU backend are not guaranteed to be identical to the CPU backend due to:
