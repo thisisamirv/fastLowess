@@ -9,30 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Integrated `parallel(bool)` directly into the core `LowessBuilder`, simplifying the interface for enabling parallel execution.
-- Added support for runtime backend selection (CPU/GPU) via the `.backend(Backend)` method on all builders.
-- Introduced `cpu` (default) and `gpu` Cargo features to toggle platform-specific optimizations.
-  - `cpu`: Enables `rayon` and `ndarray` based parallel execution.
-  - `gpu`: Adds support for `wgpu`-accelerated fit passes.
-- Added initialization code for the GPU execution engine in `src/engine/gpu.rs`.
-- Added tests for ensuring consistency between serial and parallel execution.
+- Added `cpu` (default) and `gpu` Cargo features for modular platform-specific optimizations.
+  - `cpu`: Enables `rayon` and `ndarray`-based parallel execution (default).
+  - `gpu`: Adds `wgpu`, `bytemuck`, `pollster`, and `futures-intrusive` dependencies for GPU acceleration infrastructure.
+- Added GPU execution engine placeholder in `src/engine/gpu.rs` with conditional compilation (`#[cfg(feature = "gpu")]`).
+- Added `fit_pass_gpu` function for GPU-accelerated fit processing (feature-gated).
+- Added `backend()` setter method to all builder structs for runtime backend selection.
+- Added tests for GPU engine (`tests/gpu_tests.rs`) and parallel execution consistency.
 
 ### Changed
 
-- Renamed `Extended*LowessBuilder` structs to `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`).
-- Simplified extended builders by leveraging core crate field for `parallel` configuration.
-- Standardized method names and parameter propagation across all execution adapters.
-- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of the enum types themselves.
-- Updated `lowess` dependency to v0.6.0 with `dev` feature.
-- Consolidated development options into the namespaced `dev` structure, migrating direct field access of `parallel` and `backend` to `builder.dev`.
-- Updated parallel CV to use `cv_seed` for alignment with core crate.
-- Applied comprehensive conditional compilation (`#[cfg]`) to support modular `cpu` and `gpu` builds.
-- Refactored all execution markers and adapter builders in `api.rs` to use new setter methods (`.parallel()`, `.backend()`) instead of direct field assignment.
+- **Renamed builders**: `Extended*LowessBuilder` → `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`).
+- Migrated `parallel` field from builder-level to core `lowess` crate's `dev` structure, accessed via `.parallel()` setter.
+- Updated `lowess` dependency from v0.5 to v0.6.0 with `dev` feature.
+- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of enum types.
+- Refactored all adapters to use `builder.base.parallel()` and `builder.base.backend()` setter methods instead of direct field access.
+- Updated parallel CV to use `cv_seed` for reproducible cross-validation (aligning with core crate).
+- Applied comprehensive conditional compilation (`#[cfg(feature = "cpu")]`, `#[cfg(feature = "gpu")]`) throughout codebase.
+- Updated `Makefile` to build, test, and document both `cpu` and `gpu` variants separately.
+- Updated `CONTRIBUTING.md` to reflect new feature flag structure and development workflow.
+- Made `ndarray` and `rayon` optional dependencies (enabled via `cpu` feature).
 
 ### Removed
 
+- Removed `.cargo/config.toml` to simplify build configuration.
 - Removed `Adapter`, `BoundaryPolicy`, `CrossValidationStrategy`, `MergeStrategy`, `RobustnessMethod`, `UpdateMode`, `WeightFunction`, and `ZeroWeightFallback` type exports from `prelude`.
-- Removed the `type Result<T>` alias (previously in `api.rs` and exported via prelude) which shadowed `std::result::Result`. This alias caused ambiguity by implicitly binding `LowessError`. We now strictly follow Rust idioms: explicit `Result<LowessResult<T>, LowessError>` return types using the standard library `Result`.
+- Removed the `type Result<T>` alias which shadowed `std::result::Result`. We now strictly follow Rust idioms: explicit `Result<LowessResult<T>, LowessError>` return types.
 
 ## [0.2.2]
 

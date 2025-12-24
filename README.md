@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0%20OR%20Commercial-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-**High-performance parallel LOWESS (Locally Weighted Scatterplot Smoothing) for Rust** — A high-level wrapper around the [`lowess`](https://github.com/thisisamirv/lowess) crate that adds rayon-based parallelism and seamless ndarray integration.
+**High-performance parallel and GPU-accelerated LOWESS (Locally Weighted Scatterplot Smoothing) for Rust** — A high-level wrapper around the [`lowess`](https://github.com/thisisamirv/lowess) crate that adds rayon-based parallelism, GPU acceleration, and seamless ndarray integration.
 
 > [!IMPORTANT]
 > For a minimal, single-threaded, and `no_std` version, use base [`lowess`](https://github.com/thisisamirv/lowess).
@@ -79,12 +79,33 @@ Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmar
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+### CPU Backend (Default)
+
+The default installation includes rayon-based parallelism and ndarray support:
 
 ```toml
 [dependencies]
-fastLowess = "0.2"
+fastLowess = "0.3"
 ```
+
+Or explicitly enable the `cpu` feature:
+
+```toml
+[dependencies]
+fastLowess = { version = "0.3", features = ["cpu"] }
+```
+
+### GPU Backend
+
+For GPU acceleration using `wgpu`, enable the `gpu` feature:
+
+```toml
+[dependencies]
+fastLowess = { version = "0.3", features = ["gpu"] }
+```
+
+> [!NOTE]
+> The GPU backend requires compatible GPU hardware and drivers. See the [Backend Comparison](#backend-comparison) section below for feature limitations.
 
 ## Quick Start
 
@@ -126,16 +147,16 @@ Lowess::new()
     .delta(0.01)
 
     // Kernel selection
-    .weight_function(WeightFunction::Tricube)
+    .weight_function(Tricube)
 
     // Robustness method
-    .robustness_method(RobustnessMethod::Bisquare)
+    .robustness_method(Bisquare)
 
     // Zero-weight fallback behavior
-    .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+    .zero_weight_fallback(UseLocalMean)
 
     // Boundary handling (for edge effects)
-    .boundary_policy(BoundaryPolicy::Extend)
+    .boundary_policy(Extend)
 
     // Confidence intervals
     .confidence_intervals(0.95)
@@ -149,14 +170,16 @@ Lowess::new()
     .return_robustness_weights()
 
     // Cross-validation (for parameter selection)
-    .cross_validate(KFold(5).with_fractions(&[0.3, 0.5, 0.7]))
+    .cross_validate(KFold(5).with_fractions(&[0.3, 0.5, 0.7]).seed(123))
 
     // Convergence
     .auto_converge(1e-4)
-    .max_iterations(20)
 
     // Execution mode
     .adapter(Batch)
+
+    // Backend (CPU or GPU)
+    .backend(CPU)
 
     // Parallelism
     .parallel(true)
@@ -164,6 +187,36 @@ Lowess::new()
     // Build the model
     .build()?;
 ```
+
+### Backend Comparison
+
+| Backend | Use Case         | Features              | Limitations         |
+|---------|------------------|-----------------------|---------------------|
+| CPU     | General          | All features          | None                |
+| GPU     | High-performance | Very fast             | Only vanilla LOWESS |
+
+> [!WARNING]
+> **GPU Backend Limitations**: The GPU backend is currently limited to vanilla LOWESS and does not support all features of the CPU backend:
+>
+> - Only Tricube kernel function
+> - Only Bisquare robustness method
+> - Only Batch adapter
+> - No cross-validation
+> - No intervals
+> - No delta optimization
+> - No edge handling (bias at edges, original LOWESS behavior)
+> - No zero-weight fallback
+> - No diagnostics
+> - No streaming or online mode
+>
+> The GPU backend eliminates CPU-GPU data transfers during robustness iterations, removing synchronization overhead. **Recommended only for very large datasets** where performance is the main priority and edge bias or other features are not a concern.
+
+> [!NOTE]
+> **GPU vs CPU Precision**: Results from the GPU backend are not guaranteed to be identical to the CPU backend due to:
+>
+> - Different floating-point precision
+> - No padding at the edges in the GPU backend
+> - Different scale estimation methods (MAD in CPU, MAR in GPU)
 
 ## Result Structure
 
