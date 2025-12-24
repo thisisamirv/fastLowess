@@ -402,9 +402,9 @@ fn bench_weight_functions(c: &mut Criterion) {
     let (x, y) = generate_sine_data(size, 42);
 
     let weight_fns = [
-        ("tricube", WeightFunction::Tricube),
-        ("gaussian", WeightFunction::Gaussian),
-        ("epanechnikov", WeightFunction::Epanechnikov),
+        ("tricube", Tricube),
+        ("gaussian", Gaussian),
+        ("epanechnikov", Epanechnikov),
     ];
 
     for (name, wf) in weight_fns {

@@ -143,7 +143,7 @@ fn bench_scalability_gpu(c: &mut Criterion) {
                     .fraction(0.1)
                     .iterations(3)
                     .adapter(Batch)
-                    .backend(Backend::GPU)
+                    .backend(GPU)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -168,7 +168,7 @@ fn bench_fraction_gpu(c: &mut Criterion) {
                     .fraction(frac)
                     .iterations(3)
                     .adapter(Batch)
-                    .backend(Backend::GPU)
+                    .backend(GPU)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -193,7 +193,7 @@ fn bench_iterations_gpu(c: &mut Criterion) {
                     .fraction(0.2)
                     .iterations(iter)
                     .adapter(Batch)
-                    .backend(Backend::GPU)
+                    .backend(GPU)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -217,7 +217,7 @@ fn bench_financial_gpu(c: &mut Criterion) {
                     .fraction(0.1)
                     .iterations(2)
                     .adapter(Batch)
-                    .backend(Backend::GPU)
+                    .backend(GPU)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -241,7 +241,7 @@ fn bench_scientific_gpu(c: &mut Criterion) {
                     .fraction(0.15)
                     .iterations(3)
                     .adapter(Batch)
-                    .backend(Backend::GPU)
+                    .backend(GPU)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -266,7 +266,7 @@ fn bench_pathological_gpu(c: &mut Criterion) {
                 .fraction(0.3)
                 .iterations(2)
                 .adapter(Batch)
-                .backend(Backend::GPU)
+                .backend(GPU)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_clustered), black_box(&y_clustered))
@@ -282,7 +282,7 @@ fn bench_pathological_gpu(c: &mut Criterion) {
                 .fraction(0.5)
                 .iterations(5)
                 .adapter(Batch)
-                .backend(Backend::GPU)
+                .backend(GPU)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_noisy), black_box(&y_noisy))
@@ -298,7 +298,7 @@ fn bench_pathological_gpu(c: &mut Criterion) {
                 .fraction(0.2)
                 .iterations(10)
                 .adapter(Batch)
-                .backend(Backend::GPU)
+                .backend(GPU)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_outlier), black_box(&y_outlier))
@@ -315,7 +315,7 @@ fn bench_pathological_gpu(c: &mut Criterion) {
                 .fraction(0.2)
                 .iterations(2)
                 .adapter(Batch)
-                .backend(Backend::GPU)
+                .backend(GPU)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_const), black_box(&y_const))
@@ -323,6 +323,49 @@ fn bench_pathological_gpu(c: &mut Criterion) {
         })
     });
 
+    group.finish();
+}
+
+fn bench_crossover_gpu(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crossover");
+    group.sample_size(10); // Reduced sample size for large datasets
+
+    let sizes = [100_000, 250_000, 500_000, 1_000_000, 2_000_000];
+
+    for &size in &sizes {
+        group.throughput(Throughput::Elements(size as u64));
+        let (x, y) = generate_sine_data(size, 42);
+
+        // CPU Benchmark
+        group.bench_with_input(BenchmarkId::new("cpu", size), &size, |b, _| {
+            b.iter(|| {
+                Lowess::new()
+                    .fraction(0.1)
+                    .iterations(3)
+                    .adapter(Batch)
+                    .backend(CPU)
+                    .build()
+                    .unwrap()
+                    .fit(black_box(&x), black_box(&y))
+                    .unwrap()
+            })
+        });
+
+        // GPU Benchmark
+        group.bench_with_input(BenchmarkId::new("gpu", size), &size, |b, _| {
+            b.iter(|| {
+                Lowess::new()
+                    .fraction(0.1)
+                    .iterations(3)
+                    .adapter(Batch)
+                    .backend(GPU)
+                    .build()
+                    .unwrap()
+                    .fit(black_box(&x), black_box(&y))
+                    .unwrap()
+            })
+        });
+    }
     group.finish();
 }
 
@@ -334,6 +377,7 @@ criterion_group!(
     bench_financial_gpu,
     bench_scientific_gpu,
     bench_pathological_gpu,
+    bench_crossover_gpu,
 );
 
 criterion_main!(benches);
