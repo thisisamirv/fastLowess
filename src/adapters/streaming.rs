@@ -5,92 +5,43 @@
 //! This module provides the streaming execution adapter for LOWESS smoothing
 //! on datasets too large to fit in memory. It divides the data into overlapping
 //! chunks, processes each chunk independently, and merges the results while
-//! handling boundary effects. This enables LOWESS smoothing on arbitrarily
-//! large datasets with controlled memory usage.
+//! handling boundary effects.
 //!
 //! ## Design notes
 //!
-//! * Processes data in fixed-size chunks with configurable overlap.
-//! * Automatically sorts data within each chunk.
-//! * Merges overlapping regions using configurable strategies.
-//! * Handles boundary effects at chunk edges.
-//! * Supports smoothing, residuals, robustness weights, and diagnostics.
-//! * Delegates computation to the `lowess` crate's streaming adapter.
-//! * Adds parallel execution via `rayon` (fastLowess extension).
-//! * Generic over `Float` types to support f32 and f64.
-//! * Stateful: maintains overlap buffer between chunks.
+//! * **Strategy**: Processes data in fixed-size chunks with configurable overlap.
+//! * **Merging**: Merges overlapping regions using configurable strategies (Average, Weighted).
+//! * **Sorting**: Automatically sorts data within each chunk.
+//! * **Parallelism**: Adds parallel execution via `rayon` (fastLowess extension).
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Chunked Processing
-//! The streaming adapter divides data into overlapping chunks:
-//! ```text
-//! Chunk 1: [==========]
-//! Chunk 2:       [==========]
-//! Chunk 3:             [==========]
-//!          ↑overlap↑
-//! ```
-//!
-//! ### Overlap Strategy
-//! Overlap ensures smooth transitions between chunks:
-//! * **Rule of thumb**: overlap = 2 × window_size
-//! * Larger overlap = better boundary handling, more computation
-//! * Smaller overlap = faster processing, potential edge artifacts
-//!
-//! ### Merge Strategies
-//! When chunks overlap, values are merged using:
-//! * **Average**: Simple average of overlapping values
-//! * **Weighted**: Distance-weighted average
-//! * **KeepFirst**: Use value from first chunk
-//! * **KeepLast**: Use value from last chunk
-//!
-//! ### Boundary Policies
-//! At dataset boundaries:
-//! * **Extend**: Extend the first/last values to fill neighborhoods
-//! * **Reflect**: Reflect values around the boundary
-//! * **Zero**: Use zero padding at boundaries
-//!
-//! ### Processing Flow
-//! For each chunk:
-//! 1. Validate chunk data
-//! 2. Sort chunk by x-values
-//! 3. Perform LOWESS smoothing (parallel if enabled)
-//! 4. Extract non-overlapping portion
-//! 5. Merge overlap with previous chunk
-//! 6. Buffer overlap for next chunk
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Robustness weights**: Return weights used for each point
-//! * **Diagnostics**: RMSE, MAE, R^2, Residual SD (cumulative)
-//! * **Delta optimization**: Point skipping for dense data
-//! * **Configurable chunking**: Chunk size and overlap
-//! * **Merge strategies**: Multiple overlap merging options
-//! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
+//! * **Chunked Processing**: Divides stream into `chunk_size` pieces.
+//! * **Overlap**: Ensures smooth transitions, typically 2x window size.
+//! * **Merging**: Handles value conflicts in overlapping regions.
+//! * **Boundary Policies**: Handles edge effects at stream start/end.
 //!
 //! ## Invariants
 //!
 //! * Chunk size must be larger than overlap.
-//! * Overlap must be large enough for local smoothing.
-//! * All values must be finite (no NaN or infinity).
-//! * At least 2 points required per chunk.
-//! * Output order matches input order within each chunk.
+//! * Overlap must be sufficient for local smoothing window.
+//! * Values must be finite.
+//! * At least 2 points per chunk.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not support confidence/prediction intervals.
 //! * This adapter does not support cross-validation.
-//! * This adapter does not handle batch processing (use batch adapter).
-//! * This adapter does not handle incremental updates (use online adapter).
+//! * This adapter does not handle batch processing.
+//! * This adapter does not handle incremental updates.
 //! * This adapter requires chunks to be provided in stream order.
-//!
-//! ## Visibility
-//!
-//! The streaming adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `StreamingLowess` is possible but not
-//! the primary interface.
+
+// Feature-gated imports
+#[cfg(feature = "cpu")]
+use crate::engine::executor::smooth_pass_parallel;
+#[cfg(feature = "gpu")]
+use crate::engine::gpu::fit_pass_gpu;
 
 // External dependencies
 use num_traits::Float;
@@ -103,11 +54,9 @@ use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
 use lowess::internals::math::kernel::WeightFunction;
+use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy};
-
-// Internal dependencies
-use crate::engine::executor::smooth_pass_parallel;
 
 // ============================================================================
 // Extended Streaming LOWESS Builder
@@ -129,14 +78,19 @@ impl<T: Float> Default for ParallelStreamingLowessBuilder<T> {
 impl<T: Float> ParallelStreamingLowessBuilder<T> {
     /// Create a new streaming LOWESS builder with default parameters.
     fn new() -> Self {
-        let mut base = StreamingLowessBuilder::default();
-        base.parallel = true; // Default to parallel (fastLowess)
+        let base = StreamingLowessBuilder::default().parallel(true); // Default to parallel in fastLowess for Streaming
         Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.base.parallel = parallel;
+        self.base = self.base.parallel(parallel);
+        self
+    }
+
+    /// Set the execution backend.
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.base = self.base.backend(backend);
         self
     }
 
@@ -265,12 +219,37 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowessBuilder<T>
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.base.clone();
 
-        if builder.parallel {
-            builder.custom_smooth_pass = Some(smooth_pass_parallel);
-        } else {
-            builder.custom_smooth_pass = None;
+        match builder.backend.unwrap_or(Backend::CPU) {
+            Backend::CPU => {
+                #[cfg(feature = "cpu")]
+                {
+                    if builder.parallel.unwrap_or(true) {
+                        builder = builder.custom_smooth_pass(smooth_pass_parallel);
+                    } else {
+                        builder.custom_smooth_pass = None;
+                    }
+                }
+                #[cfg(not(feature = "cpu"))]
+                {
+                    builder.custom_smooth_pass = None;
+                }
+            }
+            Backend::GPU => {
+                #[cfg(feature = "gpu")]
+                {
+                    builder.custom_fit_pass = Some(fit_pass_gpu);
+                }
+                #[cfg(not(feature = "gpu"))]
+                {
+                    return Err(LowessError::UnsupportedFeature {
+                        adapter: "Streaming",
+                        feature: "GPU backend (requires 'gpu' feature)",
+                    });
+                }
+            }
         }
 
+        // Delegate execution to the base implementation
         let processor = builder.build()?;
 
         Ok(ParallelStreamingLowess { processor })

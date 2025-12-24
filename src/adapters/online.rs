@@ -4,82 +4,42 @@
 //!
 //! This module provides the online (incremental) execution adapter for LOWESS
 //! smoothing. It maintains a sliding window of recent observations and produces
-//! smoothed values for new points as they arrive, making it suitable for
-//! real-time data streams and incremental updates where data arrives
-//! sequentially.
+//! smoothed values for new points as they arrive.
 //!
 //! ## Design notes
 //!
-//! * Uses a fixed-size circular buffer (VecDeque) for the sliding window.
-//! * Automatically evicts oldest points when capacity is reached.
-//! * Performs full LOWESS smoothing on the current window for each new point.
-//! * Supports basic smoothing and residuals only (no intervals or diagnostics).
-//! * Requires minimum number of points before smoothing begins.
-//! * Delegates computation to the `lowess` crate's online adapter.
-//! * Adds parallel execution via `rayon` (fastLowess extension).
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Storage**: Uses a fixed-size circular buffer (VecDeque) for the sliding window.
+//! * **Eviction**: Automatically evicts oldest points when capacity is reached.
+//! * **Processing**: Performs smoothing on the current window for each new point.
+//! * **Parallelism**: Adds parallel execution via `rayon` (fastLowess extension).
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Sliding Window
-//! The online adapter maintains a fixed-size window:
-//! ```text
-//! Initial state (capacity=5):
-//! Buffer: [_, _, _, _, _]
-//!
-//! After 3 points:
-//! Buffer: [x1, x2, x3, _, _]
-//!
-//! After 7 points (buffer full, oldest dropped):
-//! Buffer: [x3, x4, x5, x6, x7]
-//!         ↑ oldest    newest ↑
-//! ```
-//!
-//! ### Incremental Processing
-//! For each new point:
-//! 1. Validate the point (finite values)
-//! 2. Add to window (evict oldest if at capacity)
-//! 3. Check if minimum points threshold is met
-//! 4. Perform LOWESS smoothing on current window
-//! 5. Return smoothed value for the newest point
-//!
-//! ### Update Modes
-//! * **Incremental**: Basic incremental updates (currently performs full re-smooth)
-//! * **Full**: Full re-smooth of the current window (O(window^2))
-//!
-//! ### Initialization Phase
-//! Before `min_points` are accumulated, `add_point()` returns `None`.
-//! Once enough points are available, smoothing begins.
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Window snapshots**: Get full `LowessResult` for current window
-//! * **Reset capability**: Clear window for handling data gaps
-//! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
+//! * **Sliding Window**: Maintains recent history up to `capacity`.
+//! * **Incremental Processing**: Validates, adds, evicts, and smooths.
+//! * **Initialization Phase**: Returns `None` until `min_points` are accumulated.
+//! * **Update Modes**: Supports `Incremental` (fast) and `Full` (accurate) modes.
 //!
 //! ## Invariants
 //!
 //! * Window size never exceeds capacity.
-//! * All values in window are finite (no NaN or infinity).
+//! * All values in window are finite.
 //! * At least `min_points` are required before smoothing.
 //! * Window maintains insertion order (oldest to newest).
-//! * Smoothing is performed on sorted window data.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not support confidence/prediction intervals.
 //! * This adapter does not compute diagnostic statistics.
 //! * This adapter does not support cross-validation.
-//! * This adapter does not handle batch processing (use batch adapter).
 //! * This adapter does not handle out-of-order points.
-//!
-//! ## Visibility
-//!
-//! The online adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `OnlineLowess` is possible but not
-//! the primary interface.
+
+// Feature-gated imports
+#[cfg(feature = "cpu")]
+use crate::engine::executor::smooth_pass_parallel;
+#[cfg(feature = "gpu")]
+use crate::engine::gpu::fit_pass_gpu;
 
 // External dependencies
 use num_traits::Float;
@@ -92,11 +52,11 @@ use lowess::internals::adapters::online::{OnlineLowess, OnlineLowessBuilder};
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::math::kernel::WeightFunction;
+use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::{BoundaryPolicy, UpdateMode};
 
 // Internal dependencies
-use crate::engine::executor::smooth_pass_parallel;
 use crate::input::LowessInput;
 
 // ============================================================================
@@ -119,14 +79,19 @@ impl<T: Float> Default for ParallelOnlineLowessBuilder<T> {
 impl<T: Float> ParallelOnlineLowessBuilder<T> {
     /// Create a new online LOWESS builder with default parameters.
     fn new() -> Self {
-        let mut base = OnlineLowessBuilder::default();
-        base.parallel = false; // Sequential for lower latency
+        let base = OnlineLowessBuilder::default().parallel(false); // Default to non-parallel in fastLowess for Online
         Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.base.parallel = parallel;
+        self.base = self.base.parallel(parallel);
+        self
+    }
+
+    /// Set the execution backend.
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.base = self.base.backend(backend);
         self
     }
 
@@ -273,10 +238,39 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowessBuilder<T> {
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.base.clone();
 
-        if builder.parallel {
-            builder.custom_smooth_pass = Some(smooth_pass_parallel);
-        } else {
-            builder.custom_smooth_pass = None;
+        match builder.backend.unwrap_or(Backend::CPU) {
+            Backend::CPU => {
+                #[cfg(feature = "cpu")]
+                {
+                    if builder.parallel.unwrap_or(false) {
+                        builder = builder.custom_smooth_pass(smooth_pass_parallel);
+                    } else {
+                        builder.custom_smooth_pass = None;
+                    }
+                }
+                #[cfg(not(feature = "cpu"))]
+                {
+                    builder.custom_smooth_pass = None;
+                }
+            }
+            Backend::GPU => {
+                #[cfg(feature = "gpu")]
+                {
+                    // For Online, we currently use fit_pass_gpu as a hook
+                    // However, OnlineLowess in 'lowess' might not support full custom fit pass
+                    // in the same way Batch does, but since fit_pass_gpu implements the
+                    // FitPassFn signature, we can hook it if the base adapter supports it.
+                    // OnlineLowessBuilder DOES have custom_fit_pass.
+                    builder.custom_fit_pass = Some(fit_pass_gpu);
+                }
+                #[cfg(not(feature = "gpu"))]
+                {
+                    return Err(LowessError::UnsupportedFeature {
+                        adapter: "Online",
+                        feature: "GPU backend (requires 'gpu' feature)",
+                    });
+                }
+            }
         }
 
         // Delegate execution to the base implementation

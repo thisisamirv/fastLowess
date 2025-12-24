@@ -2,76 +2,47 @@
 //!
 //! ## Purpose
 //!
-//! This module provides the batch (standard) execution adapter for LOWESS
-//! smoothing. It handles complete datasets in memory with optional parallel
-//! processing, making it suitable for small to medium-sized datasets where
-//! all data is available upfront. The batch adapter is the simplest and most
-//! straightforward way to use LOWESS.
+//! This module provides the batch execution adapter for LOWESS smoothing.
+//! It handles complete datasets in memory with optional parallel processing,
+//! making it suitable for small to medium-sized datasets.
 //!
 //! ## Design notes
 //!
-//! * Processes entire dataset in a single pass.
-//! * Automatically sorts data by x-values and unsorts results.
-//! * Delegates computation to the execution engine.
-//! * Supports all LOWESS features: robustness, CV, intervals, diagnostics.
-//! * Adds parallel execution via `rayon` (fastLowess extension).
-//! * Uses builder pattern for configuration.
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Processing**: Processes entire dataset in a single pass.
+//! * **Sorting**: Automatically sorts data by x-values and unsorts results.
+//! * **Delegation**: Delegates computation to the execution engine.
+//! * **Parallelism**: Adds parallel execution via `rayon` (fastLowess extension).
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Batch Processing
-//! The batch adapter:
-//! 1. Validates input data
-//! 2. Sorts data by x-values (required for LOWESS)
-//! 3. Executes LOWESS smoothing via the engine
-//! 4. Computes optional outputs (diagnostics, intervals, residuals)
-//! 5. Unsorts results to match original input order
-//! 6. Packages everything into a `LowessResult`
-//!
-//! ### Builder Pattern
-//! Configuration is done through `ParallelBatchLowessBuilder`:
-//! * Fluent API for setting parameters
-//! * Sensible defaults for all parameters
-//! * Validation deferred until `fit()` is called
-//!
-//! ### Automatic Sorting
-//! LOWESS requires sorted x-values. The batch adapter:
-//! * Automatically sorts input data by x
-//! * Tracks original indices
-//! * Unsorts all outputs to match original order
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Cross-validation**: Automatic fraction selection
-//! * **Auto-convergence**: Adaptive iteration count
-//! * **Confidence intervals**: Uncertainty in fitted curve
-//! * **Prediction intervals**: Uncertainty for new observations
-//! * **Diagnostics**: RMSE, MAE, R^2, AIC, AICc
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Robustness weights**: Final weights from iterative refinement
-//! * **Parallel execution**: Rayon-based parallelism (fastLowess extension)
+//! * **Batch Processing**: Validates, sorts, filters, executes, and unsorts.
+//! * **Builder Pattern**: Fluent API for configuration with sensible defaults.
+//! * **Automatic Sorting**: Ensures x-values are sorted for the algorithm.
+//! * **Parallel Execution**: Uses Rayon for multi-threaded processing.
 //!
 //! ## Invariants
 //!
 //! * Input arrays x and y must have the same length.
-//! * All values must be finite (no NaN or infinity).
+//! * All values must be finite.
 //! * At least 2 data points are required.
-//! * Fraction must be in (0, 1].
-//! * Output order matches input order (automatic unsorting).
+//! * Output order matches input order.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not handle streaming data (use streaming adapter).
 //! * This adapter does not handle incremental updates (use online adapter).
-//! * This adapter does not handle missing values (NaN).
-//!
-//! ## Visibility
-//!
-//! The batch adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `BatchLowess` is possible but not
-//! the primary interface.
+//! * This adapter does not handle missing values.
+
+// Feature-gated imports
+#[cfg(feature = "cpu")]
+use crate::engine::executor::smooth_pass_parallel;
+#[cfg(feature = "gpu")]
+use crate::engine::gpu::fit_pass_gpu;
+#[cfg(feature = "cpu")]
+use crate::evaluation::cv::cv_pass_parallel;
+#[cfg(feature = "cpu")]
+use crate::evaluation::intervals::interval_pass_parallel;
 
 // External dependencies
 use num_traits::Float;
@@ -85,13 +56,11 @@ use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
 use lowess::internals::evaluation::cv::CVKind;
 use lowess::internals::math::kernel::WeightFunction;
+use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
 use lowess::internals::primitives::partition::BoundaryPolicy;
 
 // Internal dependencies
-use crate::engine::executor::smooth_pass_parallel;
-use crate::evaluation::cv::cv_pass_parallel;
-use crate::evaluation::intervals::interval_pass_parallel;
 use crate::input::LowessInput;
 
 // ============================================================================
@@ -119,14 +88,19 @@ impl<T: Float> ParallelBatchLowessBuilder<T> {
     /// * All base parameters from lowess BatchLowessBuilder
     /// * parallel: true (fastLowess extension)
     fn new() -> Self {
-        let mut base = BatchLowessBuilder::default();
-        base.parallel = true; // Default to parallel in fastLowess
+        let base = BatchLowessBuilder::default().parallel(true); // Default to parallel in fastLowess
         Self { base }
     }
 
     /// Set parallel execution mode.
     pub fn parallel(mut self, parallel: bool) -> Self {
-        self.base.parallel = parallel;
+        self.base = self.base.parallel(parallel);
+        self
+    }
+
+    /// Set the execution backend.
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.base = self.base.backend(backend);
         self
     }
 
@@ -269,14 +243,44 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelBatchLowess<T> {
         // Configure the base builder with parallel callback if enabled
         let mut builder = self.config.base;
 
-        if builder.parallel {
-            builder.custom_smooth_pass = Some(smooth_pass_parallel);
-            builder.custom_cv_pass = Some(cv_pass_parallel);
-            builder.custom_interval_pass = Some(interval_pass_parallel);
-        } else {
-            builder.custom_smooth_pass = None;
-            builder.custom_cv_pass = None;
-            builder.custom_interval_pass = None;
+        match builder.backend.unwrap_or(Backend::CPU) {
+            Backend::CPU => {
+                #[cfg(feature = "cpu")]
+                {
+                    if builder.parallel.unwrap_or(true) {
+                        builder = builder
+                            .custom_smooth_pass(smooth_pass_parallel)
+                            .custom_cv_pass(cv_pass_parallel)
+                            .custom_interval_pass(interval_pass_parallel);
+                    } else {
+                        // Resets - though they are None by default
+                        // but explicitly clearing just in case
+                        builder.custom_smooth_pass = None;
+                        builder.custom_cv_pass = None;
+                        builder.custom_interval_pass = None;
+                    }
+                }
+                #[cfg(not(feature = "cpu"))]
+                {
+                    // Fallback to sequential if cpu feature is disabled
+                    builder.custom_smooth_pass = None;
+                    builder.custom_cv_pass = None;
+                    builder.custom_interval_pass = None;
+                }
+            }
+            Backend::GPU => {
+                #[cfg(feature = "gpu")]
+                {
+                    builder.custom_fit_pass = Some(fit_pass_gpu);
+                }
+                #[cfg(not(feature = "gpu"))]
+                {
+                    return Err(LowessError::UnsupportedFeature {
+                        adapter: "Batch",
+                        feature: "GPU backend (requires 'gpu' feature)",
+                    });
+                }
+            }
         }
 
         // Delegate execution to the base implementation

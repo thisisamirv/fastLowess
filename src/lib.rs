@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 #![deny(missing_docs)]
-//! # LOWESS — Locally Weighted Scatterplot Smoothing for Rust
+//! # Fast LOWESS (Locally Weighted Scatterplot Smoothing)
 //!
-//! A production-ready, high-performance LOWESS implementation with comprehensive
+//! A production-ready, high-performance, multi-threaded, GPU-accelerated LOWESS implementation with comprehensive
 //! features for robust nonparametric regression and trend estimation.
 //!
 //! ## What is LOWESS?
@@ -19,6 +19,7 @@
 //! - Robust to outliers (with robustness iterations enabled)
 //! - Provides uncertainty estimates via confidence/prediction intervals
 //! - Handles irregular sampling and missing regions gracefully
+//! - Multi-threaded and GPU-accelerated features for high performance
 //!
 //! **Common applications:**
 //! - Exploratory data analysis and visualization
@@ -109,6 +110,7 @@
 //!     .cross_validate(KFold(5, &[0.3, 0.7]).seed(123)) // K-fold CV with 5 folds and 2 fraction options
 //!     .adapter(Batch)                                  // Batch adapter
 //!     .parallel(true)                                  // Enable parallel execution
+//!     .backend(CPU)                                    // Default to CPU backend, please read the docs for more information
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
@@ -154,7 +156,7 @@
 //! The `?` operator is idiomatic:
 //!
 //! ```rust
-//! use lowess::prelude::*;
+//! use fastLowess::prelude::*;
 //! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 //! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
 //!
@@ -188,54 +190,6 @@
 //! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
-//! ## Minimal Usage (no_std / Embedded)
-//!
-//! The crate supports `no_std` environments for embedded devices and resource-constrained systems.
-//! Disable default features to remove the standard library dependency:
-//!
-//! ```toml
-//! [dependencies]
-//! fastLowess = { version = "0.2", default-features = false }
-//! ```
-//!
-//! **Minimal example for embedded systems:**
-//!
-//! ```rust
-//! # #[cfg(feature = "std")] {
-//! use fastLowess::prelude::*;
-//!
-//! // In an embedded context (e.g., sensor data processing)
-//! fn smooth_sensor_data() -> Result<(), LowessError> {
-//!     // Small dataset from sensor readings
-//!     let x = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0];
-//!     let y = vec![2.1, 3.9, 6.2, 7.8, 10.1];
-//!
-//!     // Build minimal model (no intervals, no diagnostics)
-//!     let model = Lowess::new()
-//!         .fraction(0.5)
-//!         .iterations(2)      // Fewer iterations for speed
-//!         .adapter(Batch)
-//!         .build()?;
-//!
-//!     // Fit the model
-//!     let result = model.fit(&x, &y)?;
-//!
-//!     // Use smoothed values (result.y)
-//!     // ...
-//!
-//!     Ok(())
-//! }
-//! # smooth_sensor_data().unwrap();
-//! # }
-//! ```
-//!
-//! **Tips for embedded/no_std usage:**
-//! - Use `f32` instead of `f64` to reduce memory footprint
-//! - Keep datasets small (< 1000 points)
-//! - Disable optional features (intervals, diagnostics) to reduce code size
-//! - Use fewer iterations (1-2) to reduce computation time
-//! - Allocate buffers statically when possible to avoid heap fragmentation
-//!
 //! ## Parameters
 //!
 //! All builder parameters have sensible defaults. You only need to specify what you want to change.
@@ -257,6 +211,7 @@
 //! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
 //! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
 //! | **cross_validate**                         | None                                          | Method (fractions)   | Automated bandwidth selection                    | Batch            |
+//! | **backend**                                | `CPU`                                         | 2 backends           | Execution backend (CPU/GPU)                      | Batch            |
 //! | **chunk_size**                             | 5000                                          | [10, ∞)              | Points per chunk for streaming                   | Streaming        |
 //! | **overlap**                                | 500                                           | [0, chunk_size)      | Overlapping points between chunks                | Streaming        |
 //! | **merge_strategy**                         | `Average`                                     | 4 strategies         | How to merge overlapping regions                 | Streaming        |
@@ -268,13 +223,14 @@
 //!
 //! For parameters with multiple options, here are the available choices:
 //!
-//! | Parameter                | Available Options                                                                                                                                                                                                                                                                      |
-//! |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-//! | **weight_function**      | `Tricube`, `Epanechnikov`, `Gaussian`, `Biweight`, `Cosine`, `Triangle`, `Uniform`                                                                                                                                                                                                     |
-//! | **robustness_method**    | `Bisquare`, `Huber`, `Talwar`                                                                                                                                                                                                                                                          |
-//! | **zero_weight_fallback** | `UseLocalMean`, `ReturnOriginal`, `ReturnNone`                                                                                                                                                                                                                                         |
-//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`                                                                                                                                                                                                                                                            |
-//! | **update_mode**          | `Incremental`, `Full`                                                                                                                                                                                                                                                                  |
+//! | Parameter                | Available Options                                                                  |
+//! |--------------------------|------------------------------------------------------------------------------------|
+//! | **weight_function**      | `Tricube`, `Epanechnikov`, `Gaussian`, `Biweight`, `Cosine`, `Triangle`, `Uniform` |
+//! | **robustness_method**    | `Bisquare`, `Huber`, `Talwar`                                                      |
+//! | **zero_weight_fallback** | `UseLocalMean`, `ReturnOriginal`, `ReturnNone`                                     |
+//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`                                                        |
+//! | **update_mode**          | `Incremental`, `Full`                                                              |
+//! | **backend**              | `CPU`, `GPU` (currently limited)                                                   |
 //!
 //! See the detailed sections below for guidance on choosing between these options.
 //!
@@ -325,6 +281,42 @@
 //!     4.00     8.20000
 //!     5.00     9.80000
 //! ```
+//!
+//! ### Backend Comparison
+//!
+//! | Backend | Use Case         | Features              | Limitations         |
+//! |---------|------------------|-----------------------|---------------------|
+//! | CPU     | General          | All features          | None                |
+//! | GPU     | High-performance | Very fast             | Only vanilla LOWESS |
+//!
+//! **IMPORTANT:**
+//!
+//! The GPU backend is currently limited to vanilla LOWESS and does not support
+//! all features of the CPU backend. It means:
+//!
+//! - Only Tricube kernel function
+//! - Only Bisquare robustness method
+//! - Only Batch adapter
+//! - No cross-validation
+//! - No intervals
+//! - No delta
+//! - No edge handling => bias at edges (original LOWESS)
+//! - No zero-weight fallback
+//! - No diagnostics
+//! - No streaming or online mode
+//!
+//! On the other hand, the GPU backend does not rely on any intermediate CPU-GPU
+//! data transfers during robustness iterations, thus eliminating synchronization
+//! overhead. This backend is only recommended for very large datasets, where the
+//! performance is the main priority, and bias at the edges or other features are
+//! not a concern.
+//!
+//! NOTE: The results from the GPU backend are not guaranteed to be identical to
+//! the results from the CPU backend due to:
+//!
+//! - Different floating-point precision
+//! - No padding at the edges in the GPU backend
+//! - Different scale estimation methods (MAD in CPU, MAR in GPU)
 //!
 //! ### Execution Mode (Adapter) Comparison
 //!
@@ -1300,6 +1292,11 @@
 //
 // Contains cross-validation for parameter selection, diagnostic metrics
 // (RMSE, R^2, AIC), and confidence/prediction interval computation.
+#[cfg(feature = "gpu")]
+/// GPU-accelerated execution engine.
+pub mod gpu {
+    pub use crate::engine::gpu::fit_pass_gpu;
+}
 mod evaluation;
 
 // Layer 5: Engine - orchestration and execution control.
@@ -1332,6 +1329,8 @@ mod input;
 pub mod prelude {
     pub use crate::api::{
         Adapter::{Batch, Online, Streaming},
+        Backend::CPU,
+        Backend::GPU,
         BoundaryPolicy::Extend,
         BoundaryPolicy::Reflect,
         BoundaryPolicy::Zero,

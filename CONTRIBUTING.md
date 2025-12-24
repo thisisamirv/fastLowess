@@ -11,7 +11,7 @@ Before opening a new issue, please search existing ones.
 
 ## Development Setup
 
-The project uses a `Makefile` to standardize development tasks across `std` and `no-std` targets.
+The project uses a `Makefile` to automate development tasks across `cpu`, `gpu`, and `dev` targets.
 
 ```bash
 # Clone and branch
@@ -20,16 +20,14 @@ cd fastLowess
 git checkout -b feature/your-feature
 
 # Common commands
-make build      # Build both std and no-std
-make test       # Run test suite
-make check      # Run all checks (fmt, clippy, test)
+make build      # Build cpu and gpu variants
+make test       # Run test suite for both cpu and gpu
+make check      # Run all checks (fmt, clippy, build, test, doc, examples)
 ```
 
-### The `dev` Feature Flag
+A `dev` feature flag is used to expose internal modules and advanced extensibility points for testing and development. These features are explicitly handled via the `Makefile` (e.g., `make build-dev`, `make test-dev`).
 
-A `dev` feature flag is used to expose internal modules for testing. It is automatically enabled via `.cargo/config.toml` during local development.
-
-Internal modules are accessible under `fastLowess::internals::*`. Note that these APIs are unstable and intended only for internal testing.
+Internal modules are accessible under `fastLowess::internals::*`. Note that these APIs are unstable and intended only for internal use. Advanced development options in builders and executors are marked with `#[doc(hidden)]` to keep the public API clean, and are visually separated in the source code by standardized `// DEV` comment headers.
 
 ## Pull Requests
 
@@ -47,20 +45,23 @@ Internal modules are accessible under `fastLowess::internals::*`. Note that thes
 
 `fastLowess` follows a layered architecture to prevent circular dependencies:
 
-1. **API**: High-level fluent builder (`api.rs`).
+1. **API**: High-level fluent builder (`src/api.rs`).
 2. **Adapters**: Execution modes (`batch`, `streaming`, `online`).
-3. **Engine**: Only contains the executor engine.
+3. **Engine**: GPU and CPU execution engines.
+4. **Evaluation**: Parallel cross-validation and interval evaluation.
 
 Higher layers may import from lower layers, but never vice versa.
 
-Most operations and logics in the `fastLowess` crate are actually delegated to the `lowess` crate (<https://github.com/thisisamirv/lowess>).
+> [!NOTE]
+> Most core operations and mathematical logic in the `fastLowess` crate are delegated to the [lowess](https://github.com/thisisamirv/lowess) crate. Contributions to the core algorithm should be directed there.
 
 ## Testing
 
-Tests are organized by component in the `tests/` directory:
+Tests are organized by component in the `tests/` directory. Use `make test` to execute the full suite across all feature combinations.
 
 - `api_tests.rs`: Integration tests for the public API.
 - `adapters_*`: Mode-specific tests.
+- `gpu_tests.rs`: GPU engine verification.
 
 Use the `approx` crate for floating-point comparisons:
 

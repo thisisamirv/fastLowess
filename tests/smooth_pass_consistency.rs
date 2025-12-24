@@ -1,3 +1,4 @@
+#![cfg(feature = "dev")]
 use approx::assert_abs_diff_eq;
 use fastLowess::prelude::*;
 

@@ -1,5 +1,5 @@
 # Run all local checks (formatting, linting, building, tests, docs)
-check: fmt clippy build test doc
+check: fmt clippy build test doc examples
 	@echo "All checks completed successfully!"
 
 # Coverage (requires cargo-llvm-cov and llvm)
@@ -15,28 +15,76 @@ fmt:
 	@echo "Formatting check complete!"
 
 # Linter
-clippy:
-	@echo "Running clippy..."
-	@cargo clippy --all-targets -- -D warnings
+clippy: clippy-cpu clippy-gpu
+	@echo "All clippy checks completed successfully!"
+
+clippy-cpu:
+	@echo "Running clippy (cpu)..."
+	@cargo clippy --all-targets --features cpu -- -D warnings
+	@echo "Clippy check complete!"
+
+clippy-gpu:
+	@echo "Running clippy (gpu)..."
+	@cargo clippy --all-targets --features gpu -- -D warnings
 	@echo "Clippy check complete!"
 
 # Build
-build:
-	@echo "Building crate..."
-	@cargo build
+build: build-cpu build-gpu
+
+build-cpu:
+	@echo "Building crate (cpu)..."
+	@cargo build --features cpu
+	@echo "Build complete!"
+
+build-gpu:
+	@echo "Building crate (gpu)..."
+	@cargo build --features gpu
 	@echo "Build complete!"
 
 # Test
-test:
-	@echo "Running tests..."
-	@cargo test --workspace
+test: test-cpu test-gpu
+
+
+test-cpu:
+	@echo "Running tests (cpu)..."
+	@cargo test --features cpu
+	@echo "Tests complete!"
+
+test-gpu:
+	@echo "Running tests (gpu)..."
+	@cargo test --features gpu
 	@echo "Tests complete!"
 
 # Documentation
-doc:
-	@echo "Building documentation..."
-	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+doc: doc-cpu doc-gpu
+
+doc-cpu:
+	@echo "Building documentation (cpu)..."
+	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features cpu
 	@echo "Documentation build complete!"
+
+doc-gpu:
+	@echo "Building documentation (gpu)..."
+	@RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --features gpu
+	@echo "Documentation build complete!"
+
+# Examples
+examples: example_batch example_online example_streaming
+
+example_batch:
+	@echo "Building examples..."
+	@cargo run --example batch_smoothing
+	@echo "Examples build complete!"
+
+example_online:
+	@echo "Building examples..."
+	@cargo run --example online_smoothing
+	@echo "Examples build complete!"
+
+example_streaming:
+	@echo "Building examples..."
+	@cargo run --example streaming_smoothing
+	@echo "Examples build complete!"
 
 # Clean
 clean:

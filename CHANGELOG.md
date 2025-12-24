@@ -10,15 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Integrated `parallel(bool)` directly into the core `LowessBuilder`, simplifying the interface for enabling parallel execution.
+- Added support for runtime backend selection (CPU/GPU) via the `.backend(Backend)` method on all builders.
+- Introduced `cpu` (default) and `gpu` Cargo features to toggle platform-specific optimizations.
+  - `cpu`: Enables `rayon` and `ndarray` based parallel execution.
+  - `gpu`: Adds support for `wgpu`-accelerated fit passes.
+- Added initialization code for the GPU execution engine in `src/engine/gpu.rs`.
 - Added tests for ensuring consistency between serial and parallel execution.
 
 ### Changed
 
-- Renamed `Extended*LowessBuilder` structs to `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`), given their changed behavior.
+- Renamed `Extended*LowessBuilder` structs to `Parallel*LowessBuilder` for clarity (e.g., `ExtendedBatchLowessBuilder` → `ParallelBatchLowessBuilder`).
 - Simplified extended builders by leveraging core crate field for `parallel` configuration.
 - Standardized method names and parameter propagation across all execution adapters.
-- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of the enum types themselves, simplifying API usage.
-- Updated `lowess` dependency to v0.6.0.
+- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of the enum types themselves.
+- Updated `lowess` dependency to v0.6.0 with `dev` feature.
+- Consolidated development options into the namespaced `dev` structure, migrating direct field access of `parallel` and `backend` to `builder.dev`.
+- Updated parallel CV to use `cv_seed` for alignment with core crate.
+- Applied comprehensive conditional compilation (`#[cfg]`) to support modular `cpu` and `gpu` builds.
+- Refactored all execution markers and adapter builders in `api.rs` to use new setter methods (`.parallel()`, `.backend()`) instead of direct field assignment.
 
 ### Removed
 
@@ -29,9 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Binary search for delta optimization**: Replaced linear O(n) scan in `compute_anchor_points` with `partition_point` binary search, reducing anchor discovery complexity from O(n) to O(log n) per anchor point.
-- **Precomputed slope in interpolation**: Eliminated per-iteration division in `interpolate_gap` by precomputing the slope once, reducing computational overhead in the interpolation loop.
-- **Vectorized fill for tied values**: Replaced iterator-based assignment with `slice::fill` for tied x-values, enabling SIMD vectorization.
+- Replaced linear O(n) scan in `compute_anchor_points` with `partition_point` binary search, reducing anchor discovery complexity from O(n) to O(log n) per anchor point.
+- Eliminated per-iteration division in `interpolate_gap` by precomputing the slope once, reducing computational overhead in the interpolation loop.
+- Replaced iterator-based assignment with `slice::fill` for tied x-values, enabling SIMD vectorization.
 - Aligned with `lowess` crate v0.5.3 optimizations for consistent performance characteristics.
 
 ## [0.2.1]

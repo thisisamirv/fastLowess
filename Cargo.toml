@@ -32,14 +32,20 @@ include = [
 [dependencies]
 lowess = { path = "../lowess", version = "0.6", features = ["dev"] }
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
-ndarray = { version = "0.17.1", default-features = false }
-rayon = { version = "1.11" }
+ndarray = { version = "0.17", default-features = false, optional = true }
+rayon = { version = "1.11", optional = true }
+wgpu = { version = "28.0", optional = true }
+bytemuck = { version = "1.21", features = ["derive"], optional = true }
+pollster = { version = "0.4", optional = true }
+futures-intrusive = { version = "0.5", optional = true }
 
 [dev-dependencies]
 approx = "0.5"
 
 [features]
-default = []
+default = ["cpu"]
+cpu = ["dep:rayon", "dep:ndarray"]
+gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster", "dep:futures-intrusive"]
 dev = []
 
 [profile.release]
