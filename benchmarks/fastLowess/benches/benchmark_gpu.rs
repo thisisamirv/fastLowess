@@ -326,49 +326,6 @@ fn bench_pathological_gpu(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_crossover_gpu(c: &mut Criterion) {
-    let mut group = c.benchmark_group("crossover");
-    group.sample_size(10); // Reduced sample size for large datasets
-
-    let sizes = [100_000, 250_000, 500_000, 1_000_000, 2_000_000];
-
-    for &size in &sizes {
-        group.throughput(Throughput::Elements(size as u64));
-        let (x, y) = generate_sine_data(size, 42);
-
-        // CPU Benchmark
-        group.bench_with_input(BenchmarkId::new("cpu", size), &size, |b, _| {
-            b.iter(|| {
-                Lowess::new()
-                    .fraction(0.1)
-                    .iterations(3)
-                    .adapter(Batch)
-                    .backend(CPU)
-                    .build()
-                    .unwrap()
-                    .fit(black_box(&x), black_box(&y))
-                    .unwrap()
-            })
-        });
-
-        // GPU Benchmark
-        group.bench_with_input(BenchmarkId::new("gpu", size), &size, |b, _| {
-            b.iter(|| {
-                Lowess::new()
-                    .fraction(0.1)
-                    .iterations(3)
-                    .adapter(Batch)
-                    .backend(GPU)
-                    .build()
-                    .unwrap()
-                    .fit(black_box(&x), black_box(&y))
-                    .unwrap()
-            })
-        });
-    }
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_scalability_gpu,
@@ -377,7 +334,6 @@ criterion_group!(
     bench_financial_gpu,
     bench_scientific_gpu,
     bench_pathological_gpu,
-    bench_crossover_gpu,
 );
 
 criterion_main!(benches);

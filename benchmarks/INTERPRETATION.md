@@ -128,18 +128,33 @@ The `fastLowess` crate demonstrates massive performance gains over Python's `sta
 
 ## GPU vs CPU Backend Comparison
 
-Current benchmarks indicate that the **GPU backend (`wgpu`) is significantly slower than the CPU backend (`rayon`)** for dataset sizes up to 100,000 points.
+The performance dynamics change significantly depending on the `delta` parameter.
 
-| Scenario (n=50k) | CPU Time | GPU Time | Speedup (CPU/GPU) |
-|------------------|----------|----------|-------------------|
-| Scale (50k)      | 5.26ms   | 59.57ms  | **0.09x**         |
-| Iterations (10)  | 1.49ms   | 40.71ms  | **0.04x**         |
-| Fraction (0.5)   | 0.97ms   | 35.98ms  | **0.03x**         |
+### Scenario A: Delta = 0 (Dense Computation)
 
-### Analysis
+When calculating the regression at **every single point** (no interpolation), the CPU backend is surprisingly faster. This suggests the CPU's efficient memory access patterns and `rayon` parallelism outperform the GPU's raw compute when dealing with the massive memory traffic of O(N²) dense interactions.
 
-1. **Overhead Dominance**: The GPU backend incurs a substantially higher fixed overhead (~30-40ms per call) likely due to buffer creation, data transfer (Host -> Device -> Host), and WGPU pipeline initiation.
-2. **Dataset Size**: At n=100,000, the CPU backend takes ~10ms while GPU takes ~90ms. The "crossover point" where GPU massive parallelism outperforms CPU overhead has not been reached with current test sizes.
-3. **Kernel Complexity**: Tricube weighting and polynomial regression are relatively lightweight computations. Modern AVX2/AVX-512 CPU instructions combined with Rayon parallelism are extremely efficient for this workload, making it harder for the GPU to catch up on "small" data (< 1M points).
+| Dataset Size | CPU Time    | GPU Time    | Winner | Speedup |
+|--------------|-------------|-------------|--------|---------|
+| 100,000      | 11.66 ms    | 82.94 ms    | CPU    | 7.1x    |
+| 250,000      | 40.47 ms    | 113.55 ms   | CPU    | 2.8x    |
+| 500,000      | 76.91 ms    | 151.44 ms   | CPU    | 1.96x   |
+| 1,000,000    | 140.56 ms   | 240.75 ms   | CPU    | 1.71x   |
+| 2,000,000    | 282.33 ms   | 546.97 ms   | CPU    | 1.93x   |
 
-**Recommendation**: Use the **CPU backend** (default) for most interactive and batch processing tasks. The GPU backend currently serves as a proof-of-concept for much larger datasets or integrated GPU-resident pipelines where data transfer overhead can be amortized or eliminated.
+### Scenario B: Delta = 0.01 (Optimized / Interpolated)
+
+When using the `delta` optimization, the **GPU becomes significantly faster**, scaling much better than the CPU at large sizes. This indicates the GPU implementation handles the "Anchor + Interpolate" logic more efficiently for large N.
+
+| Dataset Size | CPU Time    | GPU Time    | Winner | Speedup  |
+|--------------|-------------|-------------|--------|----------|
+| 100,000      | 51.80 ms    | 81.55 ms    | CPU    | 0.64x    |
+| 250,000      | 148.56 ms   | 109.60 ms   | **GPU**| **1.36x**|
+| 500,000      | 337.75 ms   | 172.59 ms   | **GPU**| **1.96x**|
+| 1,000,000    | 672.77 ms   | 381.48 ms   | **GPU**| **1.76x**|
+| 2,000,000    | 1,423.00 ms | 590.22 ms   | **GPU**| **2.41x**|
+
+### Recommendation
+
+- **For Standard Use (Delta ≈ 0)**: The `Backend::CPU` is generally faster and should be the default.
+- **For Large "Delta" Optimization**: If using a specific `delta` strategy that aligns with the GPU's strengths (as seen in Scenario B), the `Backend::GPU` offers superior scaling for very large datasets (> 250k points).

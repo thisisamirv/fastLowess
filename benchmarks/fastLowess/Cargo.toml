@@ -12,6 +12,10 @@ harness = false
 name = "benchmark_gpu"
 harness = false
 
+[[bench]]
+name = "crossover"
+harness = false
+
 [dependencies]
 fastLowess = { git = "https://github.com/thisisamirv/fastLowess", branch = "develop", features = [
     "cpu",
