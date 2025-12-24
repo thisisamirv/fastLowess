@@ -8,6 +8,10 @@ publish = false
 name = "benchmark"
 harness = false
 
+[[bench]]
+name = "benchmark_gpu"
+harness = false
+
 [dependencies]
 fastLowess = { git = "https://github.com/thisisamirv/fastLowess", branch = "develop" }
 ndarray = "0.17"
