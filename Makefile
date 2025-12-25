@@ -88,6 +88,10 @@ example_streaming:
 
 # Clean
 clean:
-	@echo "Performing cargo clean..."
+	@echo "Cleaning..."
 	@cargo clean
+	@rm -rf Cargo.lock
+	@rm -rf target
+	@rm -rf coverage_html
+	@rm -rf benchmarks
 	@echo "Clean complete!"

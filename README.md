@@ -21,27 +21,50 @@
 
 ## Robustness Advantages
 
-Built on the same core as `lowess`, this implementation is **more robust than statsmodels** due to:
+Built on the same core as `lowess`, this implementation is **more robust than statsmodels** due to two key design choices:
 
 ### MAD-Based Scale Estimation
 
-We use **Median Absolute Deviation (MAD)** for scale estimation, which is breakdown-point-optimal:
+For robustness weight calculations, this crate uses **Median Absolute Deviation (MAD)** for scale estimation:
 
 ```text
 s = median(|r_i - median(r)|)
 ```
 
+In contrast, statsmodels uses median of absolute residuals:
+
+```text
+s = median(|r_i|)
+```
+
+**Why MAD is more robust:**
+
+- MAD is a **breakdown-point-optimal** estimator—it remains valid even when up to 50% of data are outliers.
+- The median-centering step removes asymmetric bias from residual distributions.
+- MAD provides consistent outlier detection regardless of whether residuals are centered around zero.
+
 ### Boundary Padding
 
-We apply **boundary policies** (Extend, Reflect, Zero) at dataset edges to maintain symmetric local neighborhoods, preventing the edge bias common in other implementations.
+This crate applies **boundary policies** (Extend, Reflect, Zero) at dataset edges:
+
+- **Extend**: Repeats edge values to maintain local neighborhood size.
+- **Reflect**: Mirrors data symmetrically around boundaries.
+- **Zero**: Pads with zeros (useful for signal processing).
+
+statsmodels does not apply boundary padding, which can lead to:
+
+- Biased estimates near boundaries due to asymmetric local neighborhoods.
+- Increased variance at the edges of the smoothed curve.
 
 ### Gaussian Consistency Factor
 
-For precision in intervals, residual scale is computed using:
+For interval estimation (confidence/prediction), residual scale is computed using:
 
 ```text
 sigma = 1.4826 * MAD
 ```
+
+The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviation under Gaussian assumptions.
 
 ## Performance Advantages
 
@@ -78,6 +101,8 @@ The `fastLowess` crate demonstrates massive performance gains over Python's `sta
 | scientific_5000  | 268.5ms     | 0.45ms     | **593×**  |
 | fraction_0.2     | 297.0ms     | 0.50ms     | **591×**  |
 | scale_5000       | 229.9ms     | 0.39ms     | **590×**  |
+
+Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 
 ## Installation
 
