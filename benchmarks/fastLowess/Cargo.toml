@@ -9,7 +9,7 @@ name = "benchmark"
 harness = false
 
 [dependencies]
-fastLowess = { path = "/home/av746/Desktop/GitHub/fastLowess", features = [
+fastLowess = { git = "https://github.com/thisisamirv/fastLowess", branch = "develop", features = [
     "cpu",
     "gpu",
 ] }
