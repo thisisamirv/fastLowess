@@ -49,14 +49,16 @@ use std::fmt::Debug;
 use std::result::Result;
 
 // Export dependencies from lowess crate
+use lowess::internals::adapters::streaming::MergeStrategy;
 use lowess::internals::adapters::streaming::{StreamingLowess, StreamingLowessBuilder};
+use lowess::internals::algorithms::regression::WLSSolver;
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
+use lowess::internals::math::boundary::BoundaryPolicy;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
-use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy};
 
 // ============================================================================
 // Extended Streaming LOWESS Builder
@@ -196,7 +198,7 @@ pub struct ParallelStreamingLowess<T: Float> {
     processor: StreamingLowess<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> ParallelStreamingLowess<T> {
     /// Process a chunk of data.
     pub fn process_chunk(&mut self, x: &[T], y: &[T]) -> Result<LowessResult<T>, LowessError> {
         self.processor.process_chunk(x, y)
@@ -208,7 +210,7 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowess<T> {
     }
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ParallelStreamingLowessBuilder<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> ParallelStreamingLowessBuilder<T> {
     /// Build the streaming processor.
     pub fn build(self) -> Result<ParallelStreamingLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion

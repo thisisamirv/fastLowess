@@ -43,9 +43,7 @@ use rayon::prelude::*;
 use num_traits::Float;
 
 // Export dependencies from lowess crate
-use lowess::internals::algorithms::regression::{
-    LinearRegression, Regression, RegressionContext, ZeroWeightFallback,
-};
+use lowess::internals::algorithms::regression::{RegressionContext, WLSSolver, ZeroWeightFallback};
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::window::Window;
 
@@ -67,7 +65,7 @@ pub fn smooth_pass_parallel<T>(
     weight_function: WeightFunction,
     zero_weight_flag: u8,
 ) where
-    T: Float + Send + Sync,
+    T: Float + Send + Sync + WLSSolver,
 {
     let n = x.len();
     if n == 0 {
@@ -75,7 +73,6 @@ pub fn smooth_pass_parallel<T>(
     }
 
     let zero_weight_fallback = ZeroWeightFallback::from_u8(zero_weight_flag);
-    let fitter = LinearRegression;
 
     // If delta > 0, use delta optimization with anchor points
     if delta > T::zero() && n > 2 {
@@ -93,7 +90,6 @@ pub fn smooth_pass_parallel<T>(
                 y_smooth,
                 weight_function,
                 zero_weight_fallback,
-                &fitter,
             );
             return;
         }
@@ -109,7 +105,7 @@ pub fn smooth_pass_parallel<T>(
                     let mut window = Window::initialize(i, window_size, n);
                     window.recenter(x, i, n);
 
-                    let ctx = RegressionContext {
+                    let mut ctx = RegressionContext {
                         x,
                         y,
                         idx: i,
@@ -125,7 +121,7 @@ pub fn smooth_pass_parallel<T>(
                         zero_weight_fallback,
                     };
 
-                    (i, fitter.fit(ctx).unwrap_or(y[i]))
+                    (i, ctx.fit().unwrap_or(y[i]))
                 },
             )
             .collect();
@@ -150,7 +146,7 @@ pub fn smooth_pass_parallel<T>(
                 let mut window = Window::initialize(n - 1, window_size, n);
                 window.recenter(x, n - 1, n);
 
-                let ctx = RegressionContext {
+                let mut ctx = RegressionContext {
                     x,
                     y,
                     idx: n - 1,
@@ -166,7 +162,7 @@ pub fn smooth_pass_parallel<T>(
                     zero_weight_fallback,
                 };
 
-                y_smooth[n - 1] = fitter.fit(ctx).unwrap_or(y[n - 1]);
+                y_smooth[n - 1] = ctx.fit().unwrap_or(y[n - 1]);
                 interpolate_gap(x, y_smooth, last_anchor, n - 1);
             }
         }
@@ -181,7 +177,6 @@ pub fn smooth_pass_parallel<T>(
             y_smooth,
             weight_function,
             zero_weight_fallback,
-            &fitter,
         );
     }
 }
@@ -273,9 +268,8 @@ fn fit_all_points_parallel<T>(
     y_smooth: &mut [T],
     weight_function: WeightFunction,
     zero_weight_fallback: ZeroWeightFallback,
-    fitter: &LinearRegression,
 ) where
-    T: Float + Send + Sync,
+    T: Float + Send + Sync + WLSSolver,
 {
     let n = x.len();
 
@@ -289,7 +283,7 @@ fn fit_all_points_parallel<T>(
                 let mut window = Window::initialize(i, window_size, n);
                 window.recenter(x, i, n);
 
-                let ctx = RegressionContext {
+                let mut ctx = RegressionContext {
                     x,
                     y,
                     idx: i,
@@ -305,7 +299,7 @@ fn fit_all_points_parallel<T>(
                     zero_weight_fallback,
                 };
 
-                fitter.fit(ctx).unwrap_or(y[i])
+                ctx.fit().unwrap_or(y[i])
             },
         )
         .collect();

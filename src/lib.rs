@@ -101,6 +101,8 @@
 //!     .robustness_method(Bisquare)                     // Outlier handling
 //!     .delta(0.01)                                     // Interpolation optimization
 //!     .zero_weight_fallback(UseLocalMean)              // Fallback policy
+//!     .boundary_policy(Extend)                         // Boundary handling policy
+//!     .scaling_method(MAD)                             // Robust scale estimation
 //!     .auto_converge(1e-6)                             // Auto-convergence threshold
 //!     .confidence_intervals(0.95)                      // 95% confidence intervals
 //!     .prediction_intervals(0.95)                      // 95% prediction intervals
@@ -204,9 +206,10 @@
 //! | **robustness_method**                      | `Bisquare`                                    | 3 methods            | Outlier downweighting method                     | All              |
 //! | **zero_weight_fallback**                   | `UseLocalMean`                                | 3 fallback options   | Behavior when all weights are zero               | All              |
 //! | **return_residuals**                       | false                                         | true/false           | Include residuals in output                      | All              |
-//! | **boundary_policy**                        | `Extend`                                      | 3 policy options     | Edge handling strategy (reduces boundary bias)   | All              |
+//! | **boundary_policy**                        | `Extend`                                      | 4 policy options     | Edge handling strategy (reduces boundary bias)   | All              |
 //! | **auto_convergence**                       | None                                          | Tolerance value      | Early stopping for robustness                    | All              |
 //! | **return_robustness_weights**              | false                                         | true/false           | Include final weights in output                  | All              |
+//! | **scaling_method**                         | `MAD`                                         | 2 methods            | Scale estimation method                          | All              |
 //! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output           | Batch, Streaming |
 //! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
 //! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
@@ -228,7 +231,8 @@
 //! | **weight_function**      | `Tricube`, `Epanechnikov`, `Gaussian`, `Biweight`, `Cosine`, `Triangle`, `Uniform` |
 //! | **robustness_method**    | `Bisquare`, `Huber`, `Talwar`                                                      |
 //! | **zero_weight_fallback** | `UseLocalMean`, `ReturnOriginal`, `ReturnNone`                                     |
-//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`                                                        |
+//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`, 'NoBoundary'                                          |
+//! | **scaling_method**       | `MAD`, `MAR`                                                                       |
 //! | **update_mode**          | `Incremental`, `Full`                                                              |
 //! | **backend**              | `CPU`, `GPU` (currently limited)                                                   |
 //!
@@ -794,6 +798,7 @@
 //! - **`Extend`** (default): Pad with constant values (first/last y-value)
 //! - **`Reflect`**: Mirror the data at boundaries
 //! - **`Zero`**: Pad with zeros
+//! - **`NoBoundary`**: Do not pad the data (original Cleveland behavior)
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
@@ -815,6 +820,7 @@
 //! - Use `Extend` for most cases (default)
 //! - Use `Reflect` for periodic or symmetric data
 //! - Use `Zero` when data naturally approaches zero at boundaries
+//! - Use `NoBoundary` to disable padding
 //!
 //! ### Auto-Convergence
 //!
@@ -860,6 +866,32 @@
 //! if let Some(weights) = result.robustness_weights {
 //!     println!("Robustness weights: {:?}", weights);
 //! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
+//!
+//! ### Scaling Method
+//!
+//! The scaling method controls how the residuals are scaled.
+//!
+//! - **`MAR`**:
+//!   - Median Absolute Residual: `median(|r|)`
+//!   - Default Cleveland implementation
+//! - **`MAD`** (default):
+//!   - Median Absolute Deviation: `median(|r - median(r)|)`
+//!   - More robust to outliers
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! let model = Lowess::new()
+//!     .fraction(0.5)
+//!     .scaling_method(MAD)
+//!     .adapter(Batch)
+//!     .build()?;
+//!
+//! let result = model.fit(&x, &y)?;
 //! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
@@ -1332,6 +1364,7 @@ pub mod prelude {
         Backend::CPU,
         Backend::GPU,
         BoundaryPolicy::Extend,
+        BoundaryPolicy::NoBoundary,
         BoundaryPolicy::Reflect,
         BoundaryPolicy::Zero,
         KFold, LOOCV, LowessBuilder as Lowess, LowessError, LowessResult,
@@ -1341,6 +1374,8 @@ pub mod prelude {
         RobustnessMethod::Bisquare,
         RobustnessMethod::Huber,
         RobustnessMethod::Talwar,
+        ScalingMethod::MAD,
+        ScalingMethod::MAR,
         UpdateMode::Full,
         UpdateMode::Incremental,
         WeightFunction::Biweight,

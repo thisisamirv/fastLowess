@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+### Changed
+
+- Updated `lowess` dependency to include breaking changes from v0.7.0.
+- Consolidate imports for `BoundaryPolicy`, `MergeStrategy`, and `UpdateMode` to match `lowess` crate reorganization.
+- Updated `executor` to use `RegressionContext::fit()` instead of the removed `LinearRegression` struct.
+- Updated parallel cross-validation logic to align with new `CVKind::run` signature.
+
+### Fixed
+
+- Added `WLSSolver` trait bounds to all logic to satisfy new `lowess` requirements.
+
 ## [0.3.0]
 
 ### Added

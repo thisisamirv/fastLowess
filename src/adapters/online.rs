@@ -48,13 +48,15 @@ use std::result::Result;
 
 // Export dependencies from lowess crate
 use lowess::internals::adapters::online::OnlineOutput;
+use lowess::internals::adapters::online::UpdateMode;
 use lowess::internals::adapters::online::{OnlineLowess, OnlineLowessBuilder};
+use lowess::internals::algorithms::regression::WLSSolver;
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
+use lowess::internals::math::boundary::BoundaryPolicy;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
-use lowess::internals::primitives::partition::{BoundaryPolicy, UpdateMode};
 
 // Internal dependencies
 use crate::input::LowessInput;
@@ -191,7 +193,7 @@ pub struct ParallelOnlineLowess<T: Float> {
     processor: OnlineLowess<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> ParallelOnlineLowess<T> {
     /// Add a new point and return the smoothed value.
     pub fn add_point(&mut self, x: T, y: T) -> Result<Option<OnlineOutput<T>>, LowessError> {
         self.processor.add_point(x, y)
@@ -227,7 +229,7 @@ impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowess<T> {
     }
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ParallelOnlineLowessBuilder<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> ParallelOnlineLowessBuilder<T> {
     /// Build the online processor.
     pub fn build(self) -> Result<ParallelOnlineLowess<T>, LowessError> {
         // Check for deferred errors from adapter conversion

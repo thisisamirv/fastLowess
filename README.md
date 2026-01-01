@@ -87,14 +87,14 @@ The default installation includes rayon-based parallelism and ndarray support:
 
 ```toml
 [dependencies]
-fastLowess = "0.3"
+fastLowess = "0.4"
 ```
 
 Or explicitly enable the `cpu` feature:
 
 ```toml
 [dependencies]
-fastLowess = { version = "0.3", features = ["cpu"] }
+fastLowess = { version = "0.4", features = ["cpu"] }
 ```
 
 ### GPU Backend
@@ -103,7 +103,7 @@ For GPU acceleration using `wgpu`, enable the `gpu` feature:
 
 ```toml
 [dependencies]
-fastLowess = { version = "0.3", features = ["gpu"] }
+fastLowess = { version = "0.4", features = ["gpu"] }
 ```
 
 > [!NOTE]

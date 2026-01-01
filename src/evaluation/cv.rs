@@ -37,8 +37,10 @@ use std::cmp::Ordering::Equal;
 use std::fmt::Debug;
 
 // Export dependencies from lowess crate
+use lowess::internals::algorithms::regression::WLSSolver;
 use lowess::internals::engine::executor::{LowessConfig, LowessExecutor};
 use lowess::internals::evaluation::cv::CVKind;
+use lowess::internals::primitives::buffer::CVBuffer;
 
 /// Perform cross-validation to select the best fraction in parallel.
 #[cfg(feature = "cpu")]
@@ -50,7 +52,7 @@ pub fn cv_pass_parallel<T>(
     config: &LowessConfig<T>,
 ) -> (T, Vec<T>)
 where
-    T: Float + Send + Sync + Debug + 'static,
+    T: Float + Send + Sync + Debug + WLSSolver + 'static,
 {
     if fractions.is_empty() {
         return (T::zero(), Vec::new());
@@ -62,13 +64,23 @@ where
         .map(|&frac| {
             // Use the base CV logic for a single fraction
             // This ensures exact consistency with the sequential implementation in 'lowess'
-            let (_, s) = method.run(x, y, &[frac], config.cv_seed, |tx, ty, f| {
-                let mut fold_config = config.clone();
-                fold_config.fraction = Some(f);
-                fold_config.cv_fractions = None;
+            let mut buffer = CVBuffer::new();
+            let (_, s) = method.run(
+                x,
+                y,
+                1,
+                &[frac],
+                config.cv_seed,
+                |tx, ty, f| {
+                    let mut fold_config = config.clone();
+                    fold_config.fraction = Some(f);
+                    fold_config.cv_fractions = None;
 
-                LowessExecutor::run_with_config(tx, ty, fold_config).smoothed
-            });
+                    LowessExecutor::run_with_config(tx, ty, fold_config).smoothed
+                },
+                Option::<&mut fn(&[T], &[T], &[T], T) -> Vec<T>>::None,
+                &mut buffer,
+            );
             s[0]
         })
         .collect();

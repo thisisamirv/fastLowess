@@ -41,15 +41,18 @@ use lowess::internals::api::Online as BaseOnline;
 use lowess::internals::api::Streaming as BaseStreaming;
 
 // Publicly re-exported types
+pub use lowess::internals::adapters::online::UpdateMode;
+pub use lowess::internals::adapters::streaming::MergeStrategy;
 pub use lowess::internals::algorithms::regression::ZeroWeightFallback;
 pub use lowess::internals::algorithms::robustness::RobustnessMethod;
 pub use lowess::internals::api::{LowessAdapter, LowessBuilder};
 pub use lowess::internals::engine::output::LowessResult;
 pub use lowess::internals::evaluation::cv::{KFold, LOOCV};
+pub use lowess::internals::math::boundary::BoundaryPolicy;
 pub use lowess::internals::math::kernel::WeightFunction;
+pub use lowess::internals::math::scaling::ScalingMethod;
 pub use lowess::internals::primitives::backend::Backend;
 pub use lowess::internals::primitives::errors::LowessError;
-pub use lowess::internals::primitives::partition::{BoundaryPolicy, MergeStrategy, UpdateMode};
 
 // ============================================================================
 // Adapter Module
