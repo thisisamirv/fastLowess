@@ -51,14 +51,15 @@ use std::result::Result;
 
 // Export dependencies from lowess crate
 use lowess::internals::adapters::batch::BatchLowessBuilder;
+use lowess::internals::algorithms::regression::WLSSolver;
 use lowess::internals::algorithms::regression::ZeroWeightFallback;
 use lowess::internals::algorithms::robustness::RobustnessMethod;
 use lowess::internals::engine::output::LowessResult;
 use lowess::internals::evaluation::cv::CVKind;
+use lowess::internals::math::boundary::BoundaryPolicy;
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::backend::Backend;
 use lowess::internals::primitives::errors::LowessError;
-use lowess::internals::primitives::partition::BoundaryPolicy;
 
 // Internal dependencies
 use crate::input::LowessInput;
@@ -230,7 +231,7 @@ pub struct ParallelBatchLowess<T: Float> {
     config: ParallelBatchLowessBuilder<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> ParallelBatchLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> ParallelBatchLowess<T> {
     /// Perform LOWESS smoothing on the provided data.
     pub fn fit<I1, I2>(self, x: &I1, y: &I2) -> Result<LowessResult<T>, LowessError>
     where
