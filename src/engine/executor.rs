@@ -126,44 +126,78 @@ pub fn smooth_pass_parallel<T>(
             )
             .collect();
 
-        // Step 3: Write anchor values and interpolate between them
+        // Step 3: Write anchor values, handle ties, and interpolate
         for &(idx, value) in &anchor_values {
             y_smooth[idx] = value;
+
+            // Handle potential ties following this anchor
+            let x_val = x[idx];
+            for i in (idx + 1)..n {
+                if x[i] == x_val {
+                    y_smooth[i] = value;
+                } else {
+                    break;
+                }
+            }
         }
 
         // Interpolate between consecutive anchors
         for window in anchors.windows(2) {
             let start = window[0];
             let end = window[1];
-            interpolate_gap(x, y_smooth, start, end);
+
+            // Only interpolate if there's a gap that wasn't already filled by ties
+            let mut gap_start = start;
+            let x_start = x[start];
+            while gap_start < end && x[gap_start] == x_start {
+                gap_start += 1;
+            }
+
+            if gap_start < end {
+                interpolate_gap(x, y_smooth, gap_start - 1, end);
+            }
         }
 
         // Handle any remaining points after the last anchor
         if let Some(&last_anchor) = anchors.last() {
             if last_anchor < n - 1 {
-                // Fit the last point and interpolate
-                let mut weights = vec![T::zero(); n];
-                let mut window = Window::initialize(n - 1, window_size, n);
-                window.recenter(x, n - 1, n);
+                // Check if last point is a tie with the last anchor
+                if x[n - 1] == x[last_anchor] {
+                    y_smooth[n - 1] = y_smooth[last_anchor];
+                } else {
+                    // Fit the last point sequentially using a reused weights buffer to avoid allocation
+                    let mut weights = vec![T::zero(); n];
+                    let mut window = Window::initialize(n - 1, window_size, n);
+                    window.recenter(x, n - 1, n);
 
-                let mut ctx = RegressionContext {
-                    x,
-                    y,
-                    idx: n - 1,
-                    window,
-                    use_robustness,
-                    robustness_weights: if use_robustness {
-                        robustness_weights
-                    } else {
-                        &[]
-                    },
-                    weights: &mut weights,
-                    weight_function,
-                    zero_weight_fallback,
-                };
+                    let mut ctx = RegressionContext {
+                        x,
+                        y,
+                        idx: n - 1,
+                        window,
+                        use_robustness,
+                        robustness_weights: if use_robustness {
+                            robustness_weights
+                        } else {
+                            &[]
+                        },
+                        weights: &mut weights,
+                        weight_function,
+                        zero_weight_fallback,
+                    };
 
-                y_smooth[n - 1] = ctx.fit().unwrap_or(y[n - 1]);
-                interpolate_gap(x, y_smooth, last_anchor, n - 1);
+                    y_smooth[n - 1] = ctx.fit().unwrap_or(y[n - 1]);
+
+                    // Same tie/gap logic for the final stretch
+                    let mut gap_start = last_anchor;
+                    let x_start = x[last_anchor];
+                    while gap_start < n - 1 && x[gap_start] == x_start {
+                        gap_start += 1;
+                    }
+                    if gap_start < n - 1 {
+                        interpolate_gap(x, y_smooth, gap_start - 1, n - 1);
+                    }
+                }
             }
         }
     } else {
@@ -205,7 +239,6 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
             .skip(last_fitted + 1)
         {
             if xi == x_last {
-                anchors.push(i);
                 tie_end = i;
             } else {
                 break;
@@ -273,11 +306,12 @@ fn fit_all_points_parallel<T>(
 {
     let n = x.len();
 
-    let results: Vec<T> = (0..n)
+    (0..n)
         .into_par_iter()
-        .map_init(
+        .zip(y_smooth.par_iter_mut())
+        .for_each_init(
             || vec![T::zero(); n],
-            |weights, i| {
+            |weights, (i, smoothed_val)| {
                 weights.fill(T::zero());
 
                 let mut window = Window::initialize(i, window_size, n);
@@ -299,10 +333,7 @@ fn fit_all_points_parallel<T>(
                     zero_weight_fallback,
                 };
 
-                ctx.fit().unwrap_or(y[i])
+                *smoothed_val = ctx.fit().unwrap_or(y[i]);
             },
-        )
-        .collect();
-
-    y_smooth.copy_from_slice(&results);
+        );
 }

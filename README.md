@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/fastLowess.svg)](https://crates.io/crates/fastLowess)
 [![Documentation](https://docs.rs/fastLowess/badge.svg)](https://docs.rs/fastLowess)
-[![License](https://img.shields.io/badge/License-AGPL--3.0%20OR%20Commercial-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 **High-performance parallel and GPU-accelerated LOWESS (Locally Weighted Scatterplot Smoothing) for Rust** — A high-level wrapper around the [`lowess`](https://github.com/thisisamirv/lowess) crate that adds rayon-based parallelism, GPU acceleration, and seamless ndarray integration.
@@ -379,8 +379,14 @@ Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) fil
 
 ## License
 
-Dual-licensed under **AGPL-3.0** (Open Source) or **Commercial License**.
-Contact `<thisisamirv@gmail.com>` for commercial inquiries.
+Licensed under either of
+
+- Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
 
 ## References
 

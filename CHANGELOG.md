@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0]
 
+### Added
+
+- Added zero-allocation parallel fitting via `fit_all_points_parallel` using `for_each_init`.
+- Added parallel CV memory reuse via `cv_pass_parallel` using `map_init`.
+- Added refined delta optimization to `compute_anchor_points` and interpolate logic to skip redundant fits for tied x-values and copy previous values instead.
+
 ### Changed
 
-- Updated `lowess` dependency to include breaking changes from v0.7.0.
+- Changed license from AGPL-3.0-or-later to dual MIT OR Apache-2.0.
+- Updated `lowess` dependency to v0.7.0 to include breaking change fixes and performance improvements.
 - Consolidate imports for `BoundaryPolicy`, `MergeStrategy`, and `UpdateMode` to match `lowess` crate reorganization.
 - Updated `executor` to use `RegressionContext::fit()` instead of the removed `LinearRegression` struct.
 - Updated parallel cross-validation logic to align with new `CVKind::run` signature.
@@ -17,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Added `WLSSolver` trait bounds to all logic to satisfy new `lowess` requirements.
+- Updated documentation examples and parameter tables to include `boundary_policy` and `scaling_method`.
 
 ## [0.3.0]
 
