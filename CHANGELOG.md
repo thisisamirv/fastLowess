@@ -20,10 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidate imports for `BoundaryPolicy`, `MergeStrategy`, and `UpdateMode` to match `lowess` crate reorganization.
 - Updated `executor` to use `RegressionContext::fit()` instead of the removed `LinearRegression` struct.
 - Updated parallel cross-validation logic to align with new `CVKind::run` signature.
+- Centralized GPU module imports.
 
 ### Fixed
 
 - Added `WLSSolver` trait bounds to all logic to satisfy new `lowess` requirements.
+- Minor documentation updates.
 - Updated documentation examples and parameter tables to include `boundary_policy` and `scaling_method`.
 
 ## [0.3.0]

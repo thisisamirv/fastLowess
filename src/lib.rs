@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-#![deny(missing_docs)]
 //! # Fast LOWESS (Locally Weighted Scatterplot Smoothing)
 //!
 //! A production-ready, high-performance, multi-threaded, GPU-accelerated LOWESS implementation with comprehensive
@@ -196,31 +194,31 @@
 //!
 //! All builder parameters have sensible defaults. You only need to specify what you want to change.
 //!
-//! | Parameter                                  | Default                                       | Range/Options        | Description                                      | Adapter          |
-//! |--------------------------------------------|-----------------------------------------------|----------------------|--------------------------------------------------|------------------|
-//! | **fraction**                               | 0.67 (or CV-selected)                         | (0, 1]               | Smoothing span (fraction of data used per fit)   | All              |
-//! | **iterations**                             | 3                                             | [0, 1000]            | Number of robustness iterations                  | All              |
-//! | **delta**                                  | 1% of x-range (Batch), 0.0 (Streaming/Online) | [0, ∞)               | Interpolation optimization threshold             | All              |
-//! | **parallel**                               | true (Batch/Streaming), false (Online)        | true/false           | Enable parallel execution (fastLowess-specific)  | All              |
-//! | **weight_function**                        | `Tricube`                                     | 7 kernel options     | Distance weighting kernel                        | All              |
-//! | **robustness_method**                      | `Bisquare`                                    | 3 methods            | Outlier downweighting method                     | All              |
-//! | **zero_weight_fallback**                   | `UseLocalMean`                                | 3 fallback options   | Behavior when all weights are zero               | All              |
-//! | **return_residuals**                       | false                                         | true/false           | Include residuals in output                      | All              |
-//! | **boundary_policy**                        | `Extend`                                      | 4 policy options     | Edge handling strategy (reduces boundary bias)   | All              |
-//! | **auto_convergence**                       | None                                          | Tolerance value      | Early stopping for robustness                    | All              |
-//! | **return_robustness_weights**              | false                                         | true/false           | Include final weights in output                  | All              |
-//! | **scaling_method**                         | `MAD`                                         | 2 methods            | Scale estimation method                          | All              |
-//! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output           | Batch, Streaming |
-//! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
-//! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
-//! | **cross_validate**                         | None                                          | Method (fractions)   | Automated bandwidth selection                    | Batch            |
-//! | **backend**                                | `CPU`                                         | 2 backends           | Execution backend (CPU/GPU)                      | Batch            |
-//! | **chunk_size**                             | 5000                                          | [10, ∞)              | Points per chunk for streaming                   | Streaming        |
-//! | **overlap**                                | 500                                           | [0, chunk_size)      | Overlapping points between chunks                | Streaming        |
-//! | **merge_strategy**                         | `Average`                                     | 4 strategies         | How to merge overlapping regions                 | Streaming        |
-//! | **update_mode**                            | `Incremental`                                 | 2 modes              | Online update strategy (Incremental vs Full)     | Online           |
-//! | **window_capacity**                        | 1000                                          | [3, ∞)               | Maximum points in sliding window                 | Online           |
-//! | **min_points**                             | 3                                             | [2, window_capacity] | Minimum points before smoothing starts           | Online           |
+//! | Parameter                     | Default                                       | Range/Options        | Description                                    | Adapter          |
+//! |-------------------------------|-----------------------------------------------|----------------------|------------------------------------------------|------------------|
+//! | **fraction**                  | 0.67 (or CV-selected)                         | (0, 1]               | Smoothing span (fraction of data used per fit) | All              |
+//! | **iterations**                | 3                                             | [0, 1000]            | Number of robustness iterations                | All              |
+//! | **delta**                     | 1% of x-range (Batch), 0.0 (Streaming/Online) | [0, ∞)               | Interpolation optimization threshold           | All              |
+//! | **parallel**                  | true (Batch/Streaming), false (Online)        | true/false           | Enable parallel execution                      | All              |
+//! | **weight_function**           | `Tricube`                                     | 7 kernel options     | Distance weighting kernel                      | All              |
+//! | **robustness_method**         | `Bisquare`                                    | 3 methods            | Outlier downweighting method                   | All              |
+//! | **zero_weight_fallback**      | `UseLocalMean`                                | 3 fallback options   | Behavior when all weights are zero             | All              |
+//! | **return_residuals**          | false                                         | true/false           | Include residuals in output                    | All              |
+//! | **boundary_policy**           | `Extend`                                      | 4 policy options     | Edge handling strategy (reduces boundary bias) | All              |
+//! | **auto_convergence**          | None                                          | Tolerance value      | Early stopping for robustness                  | All              |
+//! | **return_robustness_weights** | false                                         | true/false           | Include final weights in output                | All              |
+//! | **scaling_method**            | `MAD`                                         | 2 methods            | Scale estimation method                        | All              |
+//! | **return_diagnostics**        | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output         | Batch, Streaming |
+//! | **confidence_intervals**      | None                                          | 0..1 (level)         | Uncertainty in mean curve                      | Batch            |
+//! | **prediction_intervals**      | None                                          | 0..1 (level)         | Uncertainty for new observations               | Batch            |
+//! | **cross_validate**            | None                                          | Method (fractions)   | Automated bandwidth selection                  | Batch            |
+//! | **backend**                   | `CPU`                                         | 2 backends           | Execution backend (CPU/GPU)                    | Batch            |
+//! | **chunk_size**                | 5000                                          | [10, ∞)              | Points per chunk for streaming                 | Streaming        |
+//! | **overlap**                   | 500                                           | [0, chunk_size)      | Overlapping points between chunks              | Streaming        |
+//! | **merge_strategy**            | `Average`                                     | 4 strategies         | How to merge overlapping regions               | Streaming        |
+//! | **update_mode**               | `Incremental`                                 | 2 modes              | Online update strategy (Incremental vs Full)   | Online           |
+//! | **window_capacity**           | 1000                                          | [3, ∞)               | Maximum points in sliding window               | Online           |
+//! | **min_points**                | 3                                             | [2, window_capacity] | Minimum points before smoothing starts         | Online           |
 //!
 //! ### Parameter Options Reference
 //!
@@ -288,35 +286,24 @@
 //!
 //! ### Backend Comparison
 //!
-//! | Backend | Use Case         | Features              | Limitations         |
-//! |---------|------------------|-----------------------|---------------------|
-//! | CPU     | General          | All features          | None                |
-//! | GPU     | High-performance | Very fast             | Only vanilla LOWESS |
+//! | Backend    | Use Case         | Features     | Limitations         |
+//! |------------|------------------|--------------|---------------------|
+//! | CPU        | General          | All features | None                |
+//! | GPU (beta) | High-performance | Very fast    | Only vanilla LOWESS |
 //!
-//! **IMPORTANT:**
-//!
-//! The GPU backend is currently limited to vanilla LOWESS and does not support
-//! all features of the CPU backend. It means:
+//! **GPU Backend Limitations**: The GPU backend is currently in **Beta** and is limited to vanilla LOWESS and does not support all features of the CPU backend:
 //!
 //! - Only Tricube kernel function
 //! - Only Bisquare robustness method
 //! - Only Batch adapter
 //! - No cross-validation
 //! - No intervals
-//! - No delta
-//! - No edge handling => bias at edges (original LOWESS)
+//! - No edge handling (bias at edges, original LOWESS behavior)
 //! - No zero-weight fallback
 //! - No diagnostics
 //! - No streaming or online mode
 //!
-//! On the other hand, the GPU backend does not rely on any intermediate CPU-GPU
-//! data transfers during robustness iterations, thus eliminating synchronization
-//! overhead. This backend is only recommended for very large datasets, where the
-//! performance is the main priority, and bias at the edges or other features are
-//! not a concern.
-//!
-//! NOTE: The results from the GPU backend are not guaranteed to be identical to
-//! the results from the CPU backend due to:
+//! **GPU vs CPU Precision**: Results from the GPU backend are not guaranteed to be identical to the CPU backend due to:
 //!
 //! - Different floating-point precision
 //! - No padding at the edges in the GPU backend
@@ -326,11 +313,11 @@
 //!
 //! Choose the right execution mode based on your use case:
 //!
-//! | Adapter                                      | Use Case                                                                    | Features                                                                         | Limitations                                                               |
-//! |----------------------------------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-//! | `Batch`                                      | Complete datasets in memory<br>Standard analysis<br>Full diagnostics needed | All features supported                                                           | Requires entire dataset in memory<br>Not suitable for very large datasets |
-//! | `Streaming`                                  | Large datasets (>100K points)<br>Limited memory<br>Batch pipelines          | Chunked processing<br>Configurable overlap<br>Robustness iterations<br>Residuals | No intervals<br>No cross-validation<br>No diagnostics                     |
-//! | `Online`                                     | Real-time data<br>Sensor streams<br>Embedded systems                        | Incremental updates<br>Sliding window<br>Memory-bounded                          | No intervals<br>No cross-validation<br>Limited history                    |
+//! | Adapter     | Use Case                                                                    | Features                                                                         | Limitations                                                               |
+//! |-------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+//! | `Batch`     | Complete datasets in memory<br>Standard analysis<br>Full diagnostics needed | All features supported                                                           | Requires entire dataset in memory<br>Not suitable for very large datasets |
+//! | `Streaming` | Large datasets (>100K points)<br>Limited memory<br>Batch pipelines          | Chunked processing<br>Configurable overlap<br>Robustness iterations<br>Residuals | No intervals<br>No cross-validation<br>No diagnostics                     |
+//! | `Online`    | Real-time data<br>Sensor streams<br>Embedded systems                        | Incremental updates<br>Sliding window<br>Memory-bounded                          | No intervals<br>No cross-validation<br>Limited history                    |
 //!
 //! **Recommendation:**
 //! - **Start with Batch** for most use cases - it's the most feature-complete
@@ -648,15 +635,15 @@
 //!
 //! **Kernel selection guide:**
 //!
-//! | Kernel                                         | Efficiency | Smoothness        |
-//! |------------------------------------------------|------------|-------------------|
-//! | `Tricube`                                      | 0.998      | Very smooth       |
-//! | `Epanechnikov`                                 | 1.000      | Smooth            |
-//! | `Gaussian`                                     | 0.961      | Infinitely smooth |
-//! | `Biweight`                                     | 0.995      | Very smooth       |
-//! | `Cosine`                                       | 0.999      | Smooth            |
-//! | `Triangle`                                     | 0.989      | Moderate          |
-//! | `Uniform`                                      | 0.943      | None              |
+//! | Kernel         | Efficiency | Smoothness        |
+//! |----------------|------------|-------------------|
+//! | `Tricube`      | 0.998      | Very smooth       |
+//! | `Epanechnikov` | 1.000      | Smooth            |
+//! | `Gaussian`     | 0.961      | Infinitely smooth |
+//! | `Biweight`     | 0.995      | Very smooth       |
+//! | `Cosine`       | 0.999      | Smooth            |
+//! | `Triangle`     | 0.989      | Moderate          |
+//! | `Uniform`      | 0.943      | None              |
 //!
 //! *Efficiency = AMISE relative to Epanechnikov (1.0 = optimal)*
 //!
@@ -736,11 +723,11 @@
 //!
 //! **Available methods:**
 //!
-//! | Method                                   | Behavior                | Use Case                  |
-//! |------------------------------------------|-------------------------|---------------------------|
-//! | `Bisquare`                               | Smooth downweighting    | General-purpose, balanced |
-//! | `Huber`                                  | Linear beyond threshold | Moderate outliers         |
-//! | `Talwar`                                 | Hard threshold (0 or 1) | Extreme contamination     |
+//! | Method     | Behavior                | Use Case                  |
+//! |------------|-------------------------|---------------------------|
+//! | `Bisquare` | Smooth downweighting    | General-purpose, balanced |
+//! | `Huber`    | Linear beyond threshold | Moderate outliers         |
+//! | `Talwar`   | Hard threshold (0 or 1) | Extreme contamination     |
 //!
 //! ### Zero-Weight Fallback
 //!
@@ -1315,6 +1302,9 @@
 //! ## License
 //!
 //! See the repository for license information and contribution guidelines.
+
+#![allow(non_snake_case)]
+#![deny(missing_docs)]
 
 // ============================================================================
 // Internal Modules
