@@ -20,9 +20,6 @@ use std::fmt::Debug;
 // Export dependencies from lowess crate
 use lowess::internals::engine::executor::LowessConfig;
 
-#[cfg(feature = "gpu")]
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-#[cfg(feature = "gpu")]
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferDescriptor, BufferUsages,
@@ -72,84 +69,144 @@ struct WeightConfig {
 // Kernel 1: Fit at Anchors
 // Dispatched with num_anchors threads
 // -----------------------------------------------------------------------------
-@compute @workgroup_size(64)
-fn fit_anchors(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let anchor_id = global_id.x;
-    // Bounds check against number of anchors (passed implicitly by dispatch size)
-    // We strictly need to know num_anchors, but safe if buffer is large enough/dispatch exact.
-    // However, robust way implies we check bounds. We'll rely on dispatch dims matching buffer.
-    if (anchor_id >= arrayLength(&anchor_indices)) {
-        return;
-    }
+var<workgroup> s_x: array<f32, 256>;
+var<workgroup> s_y: array<f32, 256>;
+var<workgroup> s_w: array<f32, 256>;
+var<workgroup> wg_min_left: u32;
+var<workgroup> wg_max_right: u32;
 
-    let i = anchor_indices[anchor_id];
-    
-    // Window logic
+@compute @workgroup_size(64)
+fn fit_anchors(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(workgroup_id) workgroup_id: vec3<u32>
+) {
+    let anchor_id = global_id.x;
+    let lid = local_id.x;
     let n = config.n;
     let window_size = config.window_size;
-    
+    let num_anchors = arrayLength(&anchor_indices);
+
+    // Initial window bounds for this thread
     var left = 0u;
-    if (i > window_size / 2u) {
-        left = i - window_size / 2u;
-    }
-    
-    if (left + window_size > n) {
-        if (n > window_size) {
-            left = n - window_size;
-        } else {
-            left = 0u;
+    var right = 0u;
+    var x_i = 0.0;
+    var valid_thread = false;
+
+    if (anchor_id < num_anchors) {
+        let i = anchor_indices[anchor_id];
+        x_i = x[i];
+        
+        if (i > window_size / 2u) {
+            left = i - window_size / 2u;
         }
+        if (left + window_size > n) {
+            if (n > window_size) {
+                left = n - window_size;
+            } else {
+                left = 0u;
+            }
+        }
+        right = left + window_size - 1u;
+        valid_thread = true;
     }
-    let right = left + window_size - 1u;
 
-    let x_i = x[i];
-    let bandwidth = max(abs(x_i - x[left]), abs(x_i - x[right]));
+    // Determine workgroup bounds for tiling
+    // We use thread 0 and thread 63 (or last valid thread)
+    if (lid == 0u) {
+        wg_min_left = left;
+    }
+    if (lid == 63u || anchor_id == num_anchors - 1u) {
+        wg_max_right = right;
+    }
+    workgroupBarrier();
 
-    if (bandwidth <= 0.0) {
-        anchor_output[anchor_id] = y[i];
+    // If whole workgroup is invalid, just exit
+    if (anchor_id - lid >= num_anchors) {
         return;
     }
 
-    // Weighted linear regression
+    // Calculate bandwidth from global memory before tiling (simplified)
+    // We need bandwidth = max(abs(x_i - x[left]), abs(x_i - x[right]))
+    var bandwidth = 0.0;
+    if (valid_thread) {
+        bandwidth = max(abs(x_i - x[left]), abs(x_i - x[right]));
+        if (bandwidth <= 0.0) {
+            anchor_output[anchor_id] = y[anchor_indices[anchor_id]];
+            valid_thread = false; // Stop further regression calculation
+        }
+    }
+
+    // Weighted linear regression variables
     var sum_w = 0.0;
     var sum_wx = 0.0;
     var sum_wxx = 0.0;
     var sum_wy = 0.0;
     var sum_wxy = 0.0;
 
-    for (var j = left; j <= right; j = j + 1u) {
-        let dist = abs(x[j] - x_i);
-        let u = dist / bandwidth;
-        
-        var w = 0.0;
-        if (u < 1.0) {
-            let tmp = 1.0 - u * u * u;
-            w = tmp * tmp * tmp;
+    // Tiled processing from wg_min_left to wg_max_right
+    let tile_start = (wg_min_left / 256u) * 256u;
+    for (var t = tile_start; t <= wg_max_right; t += 256u) {
+        // Load tile into shared memory
+        for (var l = lid; l < 256u; l += 64u) {
+            let idx = t + l;
+            if (idx < n) {
+                s_x[l] = x[idx];
+                s_y[l] = y[idx];
+                s_w[l] = robustness_weights[idx];
+            } else {
+                s_x[l] = 0.0;
+                s_y[l] = 0.0;
+                s_w[l] = 0.0;
+            }
         }
-        
-        let rw = robustness_weights[j];
-        let combined_w = w * rw;
+        workgroupBarrier();
 
-        let xj = x[j];
-        let yj = y[j];
-        
-        sum_w += combined_w;
-        sum_wx += combined_w * xj;
-        sum_wxx += combined_w * xj * xj;
-        sum_wy += combined_w * yj;
-        sum_wxy += combined_w * xj * yj;
+        // Process tile if thread is within its own window
+        if (valid_thread) {
+            let start_in_tile = max(t, left);
+            let end_in_tile = min(t + 255u, right);
+            
+            for (var idx = start_in_tile; idx <= end_in_tile; idx++) {
+                let l_idx = idx - t;
+                let xj = s_x[l_idx];
+                let yj = s_y[l_idx];
+                let rw = s_w[l_idx];
+                
+                let dist = abs(xj - x_i);
+                let u = dist / bandwidth;
+                
+                var w = 0.0;
+                if (u < 1.0) {
+                    let tmp = 1.0 - u * u * u;
+                    w = tmp * tmp * tmp;
+                }
+                
+                let combined_w = w * rw;
+                
+                sum_w += combined_w;
+                sum_wx += combined_w * xj;
+                sum_wxx += combined_w * xj * xj;
+                sum_wy += combined_w * yj;
+                sum_wxy += combined_w * xj * yj;
+            }
+        }
+        workgroupBarrier();
     }
 
-    if (sum_w <= 0.0) {
-        anchor_output[anchor_id] = y[i];
-    } else {
-        let det = sum_w * sum_wxx - sum_wx * sum_wx;
-        if (abs(det) < 1e-10) {
-            anchor_output[anchor_id] = sum_wy / sum_w;
+    // Finalize regression
+    if (valid_thread) {
+        if (sum_w <= 0.0) {
+            anchor_output[anchor_id] = y[anchor_indices[anchor_id]];
         } else {
-            let a = (sum_wy * sum_wxx - sum_wxy * sum_wx) / det;
-            let b = (sum_w * sum_wxy - sum_wx * sum_wy) / det;
-            anchor_output[anchor_id] = a + b * x_i;
+            let det = sum_w * sum_wxx - sum_wx * sum_wx;
+            if (abs(det) < 1e-10) {
+                anchor_output[anchor_id] = sum_wy / sum_w;
+            } else {
+                let a = (sum_wy * sum_wxx - sum_wxy * sum_wx) / det;
+                let b = (sum_w * sum_wxy - sum_wx * sum_wy) / det;
+                anchor_output[anchor_id] = a + b * x_i;
+            }
         }
     }
 }
@@ -268,6 +325,10 @@ fn update_weights(@builtin(global_invocation_id) global_id: vec3<u32>) {
 }
 "#;
 
+thread_local! {
+    static THREAD_EXECUTOR: std::cell::RefCell<Option<GpuExecutor>> = const { std::cell::RefCell::new(None) };
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct GpuConfig {
@@ -287,7 +348,6 @@ struct WeightConfig {
     scale: f32,
 }
 
-#[cfg(feature = "gpu")]
 struct GpuExecutor {
     device: Device,
     queue: Queue,
@@ -506,7 +566,6 @@ impl GpuExecutor {
                 cache: None,
             })
         };
-
         Ok(Self {
             fit_pipeline: create_pipeline("fit_anchors"),
             interpolate_pipeline: create_pipeline("interpolate"),
@@ -536,6 +595,32 @@ impl GpuExecutor {
         })
     }
 
+    fn ensure_buffer_capacity(
+        device: &Device,
+        label: &str,
+        buffer_opt: &mut Option<Buffer>,
+        size_required: u64,
+        usage: BufferUsages,
+    ) -> bool {
+        let mut created_new = false;
+        if let Some(buffer) = buffer_opt.as_ref() {
+            if buffer.size() < size_required {
+                *buffer_opt = None;
+            }
+        }
+
+        if buffer_opt.is_none() {
+            *buffer_opt = Some(device.create_buffer(&BufferDescriptor {
+                label: Some(label),
+                size: size_required,
+                usage,
+                mapped_at_creation: false,
+            }));
+            created_new = true;
+        }
+        created_new
+    }
+
     fn reset_buffers(
         &mut self,
         x: &[f32],
@@ -547,203 +632,286 @@ impl GpuExecutor {
     ) {
         let n = x.len() as u32;
         let num_anchors = anchors.len() as u32;
-        self.n = n;
-        self.num_anchors = num_anchors;
+        let n_bytes = (n as usize * 4) as u64;
+        let anchor_bytes = (num_anchors as usize * 4) as u64;
 
-        // Group 0
-        self.config_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Config"),
-            contents: bytemuck::cast_slice(&[config]),
-            usage: BufferUsages::UNIFORM,
-        }));
-        self.x_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("X"),
-            contents: bytemuck::cast_slice(x),
-            usage: BufferUsages::STORAGE,
-        }));
-        self.y_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Y"),
-            contents: bytemuck::cast_slice(y),
-            usage: BufferUsages::STORAGE,
-        }));
-        self.anchor_indices_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Anchors"),
-            contents: bytemuck::cast_slice(anchors),
-            usage: BufferUsages::STORAGE,
-        }));
-        self.anchor_output_buffer = Some(self.device.create_buffer(&BufferDescriptor {
-            label: Some("AnchorOutput"),
-            size: (num_anchors as usize * 4) as u64,
-            usage: BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        }));
+        let mut bg_needs_update = false;
 
-        self.bg0_data = Some(
-            self.device.create_bind_group(&BindGroupDescriptor {
-                label: Some("BG0"),
-                layout: &self.fit_pipeline.get_bind_group_layout(0),
+        // Group 0: Config (Uniform)
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "Config",
+            &mut self.config_buffer,
+            std::mem::size_of::<GpuConfig>() as u64,
+            BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue.write_buffer(
+            self.config_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::cast_slice(&[config]),
+        );
+
+        // Group 0: X, Y, Anchors, AnchorOutput
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "X",
+            &mut self.x_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue
+            .write_buffer(self.x_buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(x));
+
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "Y",
+            &mut self.y_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue
+            .write_buffer(self.y_buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(y));
+
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "AnchorIndices",
+            &mut self.anchor_indices_buffer,
+            anchor_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue.write_buffer(
+            self.anchor_indices_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::cast_slice(anchors),
+        );
+
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "AnchorOutput",
+            &mut self.anchor_output_buffer,
+            anchor_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+
+        if bg_needs_update || self.bg0_data.is_none() {
+            self.bg0_data = Some(
+                self.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("BG0"),
+                    layout: &self.fit_pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: self.config_buffer.as_ref().unwrap().as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: self.x_buffer.as_ref().unwrap().as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: self.y_buffer.as_ref().unwrap().as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 3,
+                            resource: self
+                                .anchor_indices_buffer
+                                .as_ref()
+                                .unwrap()
+                                .as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 4,
+                            resource: self
+                                .anchor_output_buffer
+                                .as_ref()
+                                .unwrap()
+                                .as_entire_binding(),
+                        },
+                    ],
+                }),
+            );
+        }
+
+        // Group 1: Interval Map
+        bg_needs_update = false;
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "IntervalMap",
+            &mut self.interval_map_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue.write_buffer(
+            self.interval_map_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::cast_slice(intervals),
+        );
+
+        if bg_needs_update || self.bg1_topo.is_none() {
+            self.bg1_topo = Some(
+                self.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("BG1"),
+                    layout: &self.fit_pipeline.get_bind_group_layout(1),
+                    entries: &[BindGroupEntry {
+                        binding: 0,
+                        resource: self
+                            .interval_map_buffer
+                            .as_ref()
+                            .unwrap()
+                            .as_entire_binding(),
+                    }],
+                }),
+            );
+        }
+
+        // Group 2: State
+        bg_needs_update = false;
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "RobustnessWeights",
+            &mut self.weights_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+        ) {
+            bg_needs_update = true;
+        }
+        self.queue.write_buffer(
+            self.weights_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::cast_slice(rob_w),
+        );
+
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "YSmooth",
+            &mut self.y_smooth_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "Residuals",
+            &mut self.residuals_buffer,
+            n_bytes,
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+
+        if bg_needs_update || self.bg2_state.is_none() {
+            self.bg2_state = Some(self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("BG2"),
+                layout: &self.fit_pipeline.get_bind_group_layout(2),
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: self.config_buffer.as_ref().unwrap().as_entire_binding(),
+                        resource: self.weights_buffer.as_ref().unwrap().as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: self.x_buffer.as_ref().unwrap().as_entire_binding(),
+                        resource: self.y_smooth_buffer.as_ref().unwrap().as_entire_binding(),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: self.y_buffer.as_ref().unwrap().as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 3,
-                        resource: self
-                            .anchor_indices_buffer
-                            .as_ref()
-                            .unwrap()
-                            .as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 4,
-                        resource: self
-                            .anchor_output_buffer
-                            .as_ref()
-                            .unwrap()
-                            .as_entire_binding(),
+                        resource: self.residuals_buffer.as_ref().unwrap().as_entire_binding(),
                     },
                 ],
-            }),
-        );
-
-        // Group 1
-        self.interval_map_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("IntervalMap"),
-            contents: bytemuck::cast_slice(intervals),
-            usage: BufferUsages::STORAGE,
-        }));
-        self.bg1_topo = Some(
-            self.device.create_bind_group(&BindGroupDescriptor {
-                label: Some("BG1"),
-                layout: &self.fit_pipeline.get_bind_group_layout(1),
-                entries: &[BindGroupEntry {
-                    binding: 0,
-                    resource: self
-                        .interval_map_buffer
-                        .as_ref()
-                        .unwrap()
-                        .as_entire_binding(),
-                }],
-            }),
-        );
-
-        // Group 2
-        let n_bytes = (n as usize * 4) as u64;
-        self.weights_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Weights"),
-            contents: bytemuck::cast_slice(rob_w),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-        }));
-        self.y_smooth_buffer = Some(self.device.create_buffer(&BufferDescriptor {
-            label: Some("YSmooth"),
-            size: n_bytes,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        }));
-        self.residuals_buffer = Some(self.device.create_buffer(&BufferDescriptor {
-            label: Some("Residuals"),
-            size: n_bytes,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        }));
-        self.bg2_state = Some(self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("BG2"),
-            layout: &self.fit_pipeline.get_bind_group_layout(2),
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: self.weights_buffer.as_ref().unwrap().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: self.y_smooth_buffer.as_ref().unwrap().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: self.residuals_buffer.as_ref().unwrap().as_entire_binding(),
-                },
-            ],
-        }));
-
-        // Group 3
-        let w_conf = WeightConfig { n, scale: 0.0 };
-        self.w_config_buffer = Some(self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("WConfig"),
-            contents: bytemuck::cast_slice(&[w_conf]),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        }));
-        self.reduction_buffer = Some(self.device.create_buffer(&BufferDescriptor {
-            label: Some("Reduction"),
-            size: (n.div_ceil(256) as usize * 4) as u64,
-            usage: BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        }));
-        self.bg3_aux = Some(self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("BG3"),
-            layout: &self.fit_pipeline.get_bind_group_layout(3),
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: self.w_config_buffer.as_ref().unwrap().as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: self.reduction_buffer.as_ref().unwrap().as_entire_binding(),
-                },
-            ],
-        }));
-
-        self.staging_buffer = Some(self.device.create_buffer(&BufferDescriptor {
-            label: Some("Staging"),
-            size: n_bytes,
-            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        }));
-    }
-
-    fn run_pipeline(&self, pipeline: &ComputePipeline, dispatch_size: u32, label: &str) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
-        {
-            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor::default());
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, self.bg0_data.as_ref().unwrap(), &[]);
-            pass.set_bind_group(1, self.bg1_topo.as_ref().unwrap(), &[]);
-            pass.set_bind_group(2, self.bg2_state.as_ref().unwrap(), &[]);
-            pass.set_bind_group(3, self.bg3_aux.as_ref().unwrap(), &[]);
-            pass.dispatch_workgroups(dispatch_size, 1, 1);
+            }));
         }
-        self.queue.submit(Some(encoder.finish()));
+
+        // Group 3: Aux
+        bg_needs_update = false;
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "WConfig",
+            &mut self.w_config_buffer,
+            std::mem::size_of::<WeightConfig>() as u64,
+            BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        ) {
+            bg_needs_update = true;
+        }
+
+        let reduction_size = (n.div_ceil(256) as usize * 4) as u64;
+        if Self::ensure_buffer_capacity(
+            &self.device,
+            "Reduction",
+            &mut self.reduction_buffer,
+            reduction_size,
+            BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        ) {
+            bg_needs_update = true;
+        }
+
+        if bg_needs_update || self.bg3_aux.is_none() {
+            self.bg3_aux = Some(self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("BG3"),
+                layout: &self.fit_pipeline.get_bind_group_layout(3),
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: self.w_config_buffer.as_ref().unwrap().as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: self.reduction_buffer.as_ref().unwrap().as_entire_binding(),
+                    },
+                ],
+            }));
+        }
+
+        // Staging
+        Self::ensure_buffer_capacity(
+            &self.device,
+            "Staging",
+            &mut self.staging_buffer,
+            n_bytes,
+            BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        );
+
+        self.n = n;
+        self.num_anchors = num_anchors;
     }
 
-    fn run_iteration(&self) {
+    fn record_pipeline(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &ComputePipeline,
+        dispatch_size: u32,
+    ) {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor::default());
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, self.bg0_data.as_ref().unwrap(), &[]);
+        pass.set_bind_group(1, self.bg1_topo.as_ref().unwrap(), &[]);
+        pass.set_bind_group(2, self.bg2_state.as_ref().unwrap(), &[]);
+        pass.set_bind_group(3, self.bg3_aux.as_ref().unwrap(), &[]);
+        pass.dispatch_workgroups(dispatch_size, 1, 1);
+    }
+
+    fn record_iteration(&self, encoder: &mut wgpu::CommandEncoder) {
         // 1. Fit at Anchors
-        self.run_pipeline(
-            &self.fit_pipeline,
-            self.num_anchors.div_ceil(64),
-            "FitAnchors",
-        );
+        self.record_pipeline(encoder, &self.fit_pipeline, self.num_anchors.div_ceil(64));
         // 2. Interpolate
-        self.run_pipeline(
-            &self.interpolate_pipeline,
-            self.n.div_ceil(64),
-            "Interpolate",
-        );
+        self.record_pipeline(encoder, &self.interpolate_pipeline, self.n.div_ceil(64));
         // 3. Compute Scale (MAR)
-        self.run_pipeline(&self.mar_pipeline, self.n.div_ceil(256), "MAR");
-        self.run_pipeline(&self.finalize_pipeline, 1, "FinalizeScale");
+        self.record_pipeline(encoder, &self.mar_pipeline, self.n.div_ceil(256));
+        self.record_pipeline(encoder, &self.finalize_pipeline, 1);
         // 4. Update Weights
-        self.run_pipeline(&self.weight_pipeline, self.n.div_ceil(64), "UpdateWeights");
+        self.record_pipeline(encoder, &self.weight_pipeline, self.n.div_ceil(64));
     }
 
     async fn download_buffer(&self, buf: &Buffer) -> Option<Vec<f32>> {
@@ -773,9 +941,6 @@ impl GpuExecutor {
 }
 
 /// Perform a GPU-accelerated LOWESS fit pass.
-///
-/// This function executes the LOWESS algorithm on the GPU using the
-/// optimized anchor-based interpolation method.
 pub fn fit_pass_gpu<T>(
     x: &[T],
     y: &[T],
@@ -784,91 +949,102 @@ pub fn fit_pass_gpu<T>(
 where
     T: Float + Debug + Send + Sync + 'static,
 {
-    #[cfg(feature = "gpu")]
     {
         use pollster::block_on;
-        let mut exec = match block_on(GpuExecutor::new()) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("GPU Err: {}", e);
-                return (Vec::new(), None, 0, Vec::new());
+
+        // Persistent Thread-Local Executor
+        THREAD_EXECUTOR.with(|cell| {
+            let mut opt = cell.borrow_mut();
+            if opt.is_none() {
+                *opt = block_on(GpuExecutor::new()).ok();
             }
-        };
 
-        let x_f32: Vec<f32> = x.iter().map(|v| v.to_f32().unwrap()).collect();
-        let y_f32: Vec<f32> = y.iter().map(|v| v.to_f32().unwrap()).collect();
-        let n = x.len();
-        let delta = config.delta.to_f32().unwrap();
+            let exec = opt.as_mut().expect("Failed to initialize GPU executor");
 
-        // Compute Anchors & Intervals
-        let mut anchors = Vec::with_capacity(n / 10);
-        let mut intervals = vec![0u32; n];
+            let x_f32: Vec<f32> = x.iter().map(|v| v.to_f32().unwrap()).collect();
+            let y_f32: Vec<f32> = y.iter().map(|v| v.to_f32().unwrap()).collect();
+            let n = x.len();
+            let delta = config.delta.to_f32().unwrap();
 
-        let mut last_idx = 0;
-        anchors.push(0);
-        let mut current_anchor_idx = 0;
+            // Compute Anchors & Intervals
+            let mut anchors = Vec::with_capacity(n / 10);
+            let mut intervals = vec![0u32; n];
 
-        for i in 0..n {
-            if i > 0 && x_f32[i] - x_f32[last_idx] > delta {
-                last_idx = i;
-                anchors.push(i as u32);
-                current_anchor_idx += 1;
+            let mut last_idx = 0;
+            anchors.push(0);
+            let mut current_anchor_idx = 0;
+
+            for i in 0..n {
+                if i > 0 && x_f32[i] - x_f32[last_idx] > delta {
+                    last_idx = i;
+                    anchors.push(i as u32);
+                    current_anchor_idx += 1;
+                }
+                if current_anchor_idx >= 1 {
+                    intervals[i] = current_anchor_idx - 1;
+                } else {
+                    intervals[i] = 0;
+                }
             }
-            if current_anchor_idx >= 1 {
-                intervals[i] = current_anchor_idx - 1;
-            } else {
-                intervals[i] = 0;
+            // Ensure last point is anchor if not already
+            if *anchors.last().unwrap() != (n - 1) as u32 {
+                anchors.push((n - 1) as u32);
+                // Fix intervals for tail? Logic above is simple "closest left anchor".
+                // Correct interval logic for interpolation between A[k] and A[k+1]:
+                // Point i must have intervals[i] = k where A[k] <= i <= A[k+1].
+                // Re-run interval mapping strictly.
             }
-        }
-        // Ensure last point is anchor if not already
-        if *anchors.last().unwrap() != (n - 1) as u32 {
-            anchors.push((n - 1) as u32);
-            // Fix intervals for tail? Logic above is simple "closest left anchor".
-            // Correct interval logic for interpolation between A[k] and A[k+1]:
-            // Point i must have intervals[i] = k where A[k] <= i <= A[k+1].
-            // Re-run interval mapping strictly.
-        }
 
-        // Strict Interval Mapping
-        let mut anchor_ptr = 0;
-        for (i, interval) in intervals.iter_mut().enumerate() {
-            while anchor_ptr + 1 < anchors.len() && (i as u32) >= anchors[anchor_ptr + 1] {
-                anchor_ptr += 1;
+            // Strict Interval Mapping
+            let mut anchor_ptr = 0;
+            for (i, interval) in intervals.iter_mut().enumerate() {
+                while anchor_ptr + 1 < anchors.len() && (i as u32) >= anchors[anchor_ptr + 1] {
+                    anchor_ptr += 1;
+                }
+                // For i between A[ptr] and A[ptr+1], interval is ptr.
+                *interval = anchor_ptr as u32;
             }
-            // For i between A[ptr] and A[ptr+1], interval is ptr.
-            *interval = anchor_ptr as u32;
-        }
 
-        let gpu_config = GpuConfig {
-            n: n as u32,
-            window_size: (config.fraction.unwrap().to_f32().unwrap() * n as f32) as u32,
-            weight_function: 0,
-            zero_weight_fallback: 0,
-            fraction: config.fraction.unwrap().to_f32().unwrap(),
-            delta,
-            padding: [0, 0],
-        };
+            let gpu_config = GpuConfig {
+                n: n as u32,
+                window_size: (config.fraction.unwrap().to_f32().unwrap() * n as f32) as u32,
+                weight_function: 0,
+                zero_weight_fallback: 0,
+                fraction: config.fraction.unwrap().to_f32().unwrap(),
+                delta,
+                padding: [0, 0],
+            };
 
-        exec.reset_buffers(
-            &x_f32,
-            &y_f32,
-            &anchors,
-            &intervals,
-            &vec![1.0; n],
-            gpu_config,
-        );
+            exec.reset_buffers(
+                &x_f32,
+                &y_f32,
+                &anchors,
+                &intervals,
+                &vec![1.0; n],
+                gpu_config,
+            );
 
-        for _ in 0..=config.iterations {
-            exec.run_iteration();
-        }
+            let mut encoder = exec
+                .device
+                .create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("LOWESS Main"),
+                });
 
-        let y_res = block_on(exec.download_buffer(exec.y_smooth_buffer.as_ref().unwrap())).unwrap();
-        let w_res = block_on(exec.download_buffer(exec.weights_buffer.as_ref().unwrap())).unwrap();
+            for _ in 0..=config.iterations {
+                exec.record_iteration(&mut encoder);
+            }
+            exec.queue.submit(Some(encoder.finish()));
 
-        let y_out: Vec<T> = y_res.into_iter().map(|v| T::from(v).unwrap()).collect();
-        let w_out: Vec<T> = w_res.into_iter().map(|v| T::from(v).unwrap()).collect();
+            let y_res =
+                block_on(exec.download_buffer(exec.y_smooth_buffer.as_ref().unwrap())).unwrap();
+            let w_res =
+                block_on(exec.download_buffer(exec.weights_buffer.as_ref().unwrap())).unwrap();
 
-        (y_out, None, config.iterations, w_out)
+            let y_out: Vec<T> = y_res.into_iter().map(|v| T::from(v).unwrap()).collect();
+            let w_out: Vec<T> = w_res.into_iter().map(|v| T::from(v).unwrap()).collect();
+
+            (y_out, None, config.iterations, w_out)
+        })
     }
     #[cfg(not(feature = "gpu"))]
     {

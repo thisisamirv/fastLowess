@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `executor` to use `RegressionContext::fit()` instead of the removed `LinearRegression` struct.
 - Updated parallel cross-validation logic to align with new `CVKind::run` signature.
 - Centralized GPU module imports.
+- **Performance (GPU)**: Implemented thread-local `GpuExecutor` persistence to avoid `wgpu` re-initialization overhead.
+- **Performance (GPU)**: Added intelligent buffer capacity management to reuse existing GPU buffers across calls.
+- **Performance (GPU)**: Record all robustness iterations into a single command buffer submission, reducing CPU-GPU synchronization latency.
+- **Performance (GPU)**: Refactored the `fit_anchors` compute kernel to use `@workgroup` shared memory tiled loading, significantly reducing global memory bandwidth pressure.
 
 ### Fixed
 
