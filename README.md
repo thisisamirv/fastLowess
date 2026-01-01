@@ -4,7 +4,7 @@ This workspace is dedicated to validating the correctness and benchmarking the p
 
 It builds the `fastLowess` crate from the `develop` branch (git dependency) to ensure the latest changes are tested.
 
-## structure
+## Structure
 
 - `benchmarks/`: Performance benchmarking suite.
 - `validation/`: Correctness validation suite.
@@ -17,19 +17,27 @@ Benchmarks measure execution time across various scenarios (scalability, fractio
 
 ```bash
 cd benchmarks/fastLowess
+
+# Run with CPU backend (Parallel - Default)
 cargo bench
+
+# Run with CPU Serial backend (no parallelism)
+FASTLOWESS_BACKEND=cpu_serial cargo bench
+
+# Run with GPU backend
+FASTLOWESS_BACKEND=gpu cargo bench
 ```
 
 *Results are stored in `benchmarks/fastLowess/target/criterion/` with HTML reports.*
 
-### 2. Convert Criterion Results to JSON
+### 2. Run R Benchmarks
 
 ```bash
 cd benchmarks
-python3 convert_criterion.py
+Rscript R/benchmark.R
 ```
 
-*Output: `benchmarks/output/rust_benchmark.json`*
+*Output: `benchmarks/output/r_benchmark.json`*
 
 ### 3. Run Statsmodels Benchmarks
 
@@ -40,9 +48,22 @@ python3 benchmark.py
 
 *Output: `benchmarks/output/statsmodels_benchmark.json`*
 
-### 4. Compare Benchmark Results
+### 4. Convert Criterion Results to JSON
 
-Generate a comparison report showing speedups and regressions.
+```bash
+cd benchmarks
+python3 convert_criterion.py
+```
+
+*Output:*
+
+- `benchmarks/output/rust_benchmark_cpu.json`
+- `benchmarks/output/rust_benchmark_cpu_serial.json`
+- `benchmarks/output/rust_benchmark_gpu.json`
+
+### 5. Compare Benchmark Results
+
+Generate a consolidated comparison report showing speedups (Seq-Par range for CPU) and regressions.
 
 ```bash
 cd benchmarks

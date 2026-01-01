@@ -2,159 +2,75 @@
 
 ## Summary
 
-The `fastLowess` crate demonstrates massive performance gains over Python's `statsmodels`, ranging from **136x to over 4300x** speedup. The addition of **parallel execution** (via Rayon) and optimized algorithm defaults makes it exceptionally well-suited for high-throughput data processing and large-scale datasets.
+The `fastLowess` crate demonstrates massive performance gains over Python's `statsmodels`. The introduction of a dedicated "Serial vs. Parallel" benchmark for the Rust CPU backend reveals that **Parallel Execution (Rayon)** is the decisive winner across almost all standard benchmarks, often achieving **multi-hundred-fold speedups**.
 
-## Category Comparison
+## Consolidated Comparison
 
-| Category         | Matched | Median Speedup | Mean Speedup |
-|------------------|---------|----------------|--------------|
-| **Scalability**  | 5       | **954×**       | 1637×        |
-| **Fraction**     | 6       | **571×**       | 552×         |
-| **Iterations**   | 6       | **564×**       | 567×         |
-| **Pathological** | 4       | **551×**       | 538×         |
-| **Financial**    | 4       | **385×**       | 448×         |
-| **Scientific**   | 4       | **381×**       | 450×         |
-| **Genomic**      | 4       | **23×**        | 27×          |
-| **Delta**        | 4       | **5.7×**       | 7.8×         |
+The table below shows speedups relative to the **baseline**.
 
-## Top 10 Rust Wins
+- **Standard Benchmarks**: Baseline is `statsmodels` (Python).
+- **Large Scale Benchmarks**: Baseline is `Rust (Serial)` (1x), as `statsmodels` times out.
 
-| Benchmark        | statsmodels | fastLowess | Speedup   |
-|------------------|-------------|------------|-----------|
-| scale_100000     | 43.73s      | 10.1ms     | **4339×** |
-| scale_50000      | 11.16s      | 5.26ms     | **2122×** |
-| scale_10000      | 663.1ms     | 0.70ms     | **954×**  |
-| scientific_10000 | 777.2ms     | 0.83ms     | **941×**  |
-| financial_10000  | 497.1ms     | 0.56ms     | **885×**  |
-| iterations_0     | 74.2ms      | 0.12ms     | **599×**  |
-| financial_5000   | 170.9ms     | 0.29ms     | **595×**  |
-| scientific_5000  | 268.5ms     | 0.45ms     | **593×**  |
-| fraction_0.2     | 297.0ms     | 0.50ms     | **591×**  |
-| scale_5000       | 229.9ms     | 0.39ms     | **590×**  |
+| Name                  | statsmodels |      R      |  Rust (CPU)*  | Rust (GPU)|
+|-----------------------|-------------|-------------|---------------|-----------|
+|                       |             |             |               |           |
+| clustered             |  162.77ms   |  [82.8x]²   |  [203-433x]¹  |   32.4x   |
+| constant_y            |  133.63ms   |  [92.3x]²   |  [212-410x]¹  |   17.5x   |
+| delta_large           |   0.51ms    |   [0.8x]²   |  [3.8-2.2x]¹  |   0.1x    |
+| delta_medium          |   0.79ms    |   [1.3x]²   |  [4.4-3.4x]¹  |   0.1x    |
+| delta_none            |  414.86ms   |    2.5x     |  [3.8-13x]²   | [63.5x]¹  |
+| delta_small           |   1.45ms    |   [1.7x]²   |  [4.3-4.5x]¹  |   0.2x    |
+| extreme_outliers      |  488.96ms   |  [106.4x]²  |  [201-388x]¹  |   28.9x   |
+| financial_1000        |   13.55ms   |  [76.6x]²   |  [145-108x]¹  |   4.7x    |
+| financial_10000       |  302.20ms   |  [168.3x]²  |  [453-611x]¹  |   26.3x   |
+| financial_500         |   6.49ms    |  [58.0x]¹   |  [113-58x]²   |   2.7x    |
+| financial_5000        |  103.94ms   |  [117.3x]²  |  [296-395x]¹  |   14.1x   |
+| fraction_0.05         |  122.00ms   |  [177.6x]²  |  [421-350x]¹  |   14.5x   |
+| fraction_0.1          |  140.59ms   |  [112.8x]²  |  [291-366x]¹  |   15.9x   |
+| fraction_0.2          |  181.57ms   |  [85.3x]²   |  [210-419x]¹  |   19.3x   |
+| fraction_0.3          |  220.98ms   |  [84.8x]²   |  [168-380x]¹  |   22.4x   |
+| fraction_0.5          |  296.47ms   |  [80.9x]²   |  [146-415x]¹  |   27.3x   |
+| fraction_0.67         |  362.59ms   |  [83.1x]²   |  [129-413x]¹  |   32.0x   |
+| genomic_1000          |   17.82ms   |  [15.9x]²   |   [19-33x]¹   |   6.5x    |
+| genomic_10000         |  399.90ms   |    3.6x     |  [5.3-16x]²   | [70.3x]¹  |
+| genomic_5000          |  138.49ms   |    5.0x     |  [7.0-19x]²   | [34.8x]¹  |
+| genomic_50000         |  6776.57ms  |    2.4x     |  [3.5-11x]²   | [269.2x]¹ |
+| high_noise            |  435.85ms   |  [132.6x]²  |  [134-375x]¹  |   32.3x   |
+| iterations_0          |   45.18ms   |  [128.4x]²  |  [266-405x]¹  |   10.6x   |
+| iterations_1          |   94.10ms   |  [114.3x]²  |  [236-384x]¹  |   14.4x   |
+| iterations_10         |  495.65ms   |  [116.0x]²  |  [204-369x]¹  |   27.0x   |
+| iterations_2          |  135.48ms   |  [109.0x]²  |  [219-432x]¹  |   16.6x   |
+| iterations_3          |  181.56ms   |  [108.8x]²  |  [213-382x]¹  |   18.7x   |
+| iterations_5          |  270.58ms   |  [110.4x]²  |  [208-345x]¹  |   22.7x   |
+| scale_1000            |   17.95ms   |  [82.6x]²   |  [150-107x]¹  |   8.1x    |
+| scale_10000           |  408.13ms   |  [178.1x]²  |  [433-552x]¹  |   76.3x   |
+| scale_5000            |  139.81ms   |  [133.6x]²  |  [289-401x]¹  |   28.8x   |
+| scale_50000           |  6798.58ms  |  [661.0x]²  | [1077-1264x]¹ |  277.2x   |
+| scientific_1000       |   19.04ms   |  [70.1x]²   |  [113-115x]¹  |   5.4x    |
+| scientific_10000      |  479.57ms   |  [190.7x]²  |  [370-663x]¹  |   35.2x   |
+| scientific_500        |   8.59ms    |  [49.6x]²   |   [91-52x]¹   |   3.2x    |
+| scientific_5000       |  161.42ms   |  [124.9x]²  |  [244-427x]¹  |   17.9x   |
+| scale_100000**        |      -      |      -      |    1-1.3x     |   0.3x    |
+| scale_1000000**       |      -      |      -      |    1-1.3x     |   0.3x    |
+| scale_2000000**       |      -      |      -      |    1-1.5x     |   0.3x    |
+| scale_250000**        |      -      |      -      |    1-1.4x     |   0.3x    |
+| scale_500000**        |      -      |      -      |    1-1.3x     |   0.3x    |
 
-## Regressions
+\* **Rust (CPU)**: Shows range `Seq - Par`. E.g., `12-48x` means 12x speedup (Sequential) and 48x speedup (Parallel). Rank determined by Parallel speedup.
+\*\* **Large Scale**: `Rust (Serial)` is the baseline (1x).
 
-**None identified.** `fastLowess` outperforms `statsmodels` in all matched benchmarks.
+¹ Winner (Fastest implementation)
+² Runner-up (Second fastest implementation)
 
-## Detailed Results
+## Key Takeaways
 
-### Scalability (1K - 100K points)
+1. **Rust (Parallel CPU)** is the dominant performer for general-purpose workloads, consistently achieving the highest speedups (often 300x-500x over statsmodels).
+2. **R (stats::lowess)** is a very strong runner-up, frequently outperforming statsmodels by ~80-150x, but generally trailing Rust Parallel.
+3. **Rust (GPU)** excels in specific high-compute scenarios (e.g., `genomic` with large datasets or `delta_none` where interpolation is skipped), but carries overhead that makes it slower than the highly optimized CPU backend for smaller datasets.
+4. **Large Scale Scaling**: At very large scales (100k - 2M points), the parallel CPU backend maintains a modest lead (1.3x - 1.5x) over the sequential CPU backend, likely bottlenecked by memory bandwidth rather than compute.
+5. **Small vs Large Delta**: Setting `delta=0` (no interpolation, `delta_none`) allows the GPU to shine (63.5x speedup), outperforming both CPU variants due to the massive O(N²) interaction workload being parallelized across thousands of GPU cores.
 
-| Size    | fastLowess | statsmodels | Speedup |
-|---------|------------|-------------|---------|
-| 1,000   | 0.17ms     | 30.4ms      | 183×    |
-| 5,000   | 0.39ms     | 229.9ms     | 590×    |
-| 10,000  | 0.70ms     | 663.1ms     | 954×    |
-| 50,000  | 5.26ms     | 11.16s      | 2122×   |
-| 100,000 | 10.08ms    | 43.73s      | 4339×   |
+## Recommendation
 
-### Fraction Variations (n=5000)
-
-| Fraction | fastLowess | statsmodels | Speedup |
-|----------|------------|-------------|---------|
-| 0.05     | 0.34ms     | 197.2ms     | 581×    |
-| 0.10     | 0.39ms     | 227.9ms     | 582×    |
-| 0.20     | 0.50ms     | 297.0ms     | 591×    |
-| 0.30     | 0.64ms     | 357.0ms     | 561×    |
-| 0.50     | 0.97ms     | 488.4ms     | 503×    |
-| 0.67     | 1.22ms     | 601.6ms     | 494×    |
-
-### Robustness Iterations (n=5000)
-
-| Iterations | fastLowess | statsmodels | Speedup |
-|------------|------------|-------------|---------|
-| 0          | 0.12ms     | 74.2ms      | 599×    |
-| 1          | 0.26ms     | 148.5ms     | 574×    |
-| 2          | 0.39ms     | 222.8ms     | 568×    |
-| 3          | 0.53ms     | 296.5ms     | 561×    |
-| 5          | 0.81ms     | 445.1ms     | 553×    |
-| 10         | 1.49ms     | 815.6ms     | 549×    |
-
-### Delta Parameter (n=10000)
-
-| Delta    | fastLowess | statsmodels | Speedup |
-|----------|------------|-------------|---------|
-| none (0) | 40.07ms    | 678.2ms     | 16.9×   |
-| small    | 0.35ms     | 2.28ms      | 6.6×    |
-| medium   | 0.26ms     | 1.27ms      | 4.9×    |
-| large    | 0.26ms     | 0.76ms      | 3.0×    |
-
-### Pathological Cases (n=5000)
-
-| Case             | fastLowess | statsmodels | Speedup |
-|------------------|------------|-------------|---------|
-| clustered        | 0.48ms     | 267.8ms     | 559×    |
-| constant_y       | 0.42ms     | 230.3ms     | 555×    |
-| extreme_outliers | 1.56ms     | 852.0ms     | 547×    |
-| high_noise       | 1.48ms     | 726.9ms     | 492×    |
-
-### Real-World Scenarios
-
-#### Financial Time Series
-
-| Size    | fastLowess | statsmodels | Speedup |
-|---------|------------|-------------|---------|
-| 500     | 0.08ms     | 10.4ms      | 136×    |
-| 1,000   | 0.13ms     | 22.2ms      | 176×    |
-| 5,000   | 0.29ms     | 170.9ms     | 595×    |
-| 10,000  | 0.56ms     | 497.1ms     | 885×    |
-
-#### Scientific Measurements
-
-| Size    | fastLowess | statsmodels | Speedup |
-|---------|------------|-------------|---------|
-| 500     | 0.14ms     | 14.1ms      | 98×     |
-| 1,000   | 0.19ms     | 31.6ms      | 169×    |
-| 5,000   | 0.45ms     | 268.5ms     | 593×    |
-| 10,000  | 0.83ms     | 777.2ms     | 941×    |
-
-#### Genomic Methylation (with delta=100)
-
-| Size    | fastLowess | statsmodels | Speedup |
-|---------|------------|-------------|---------|
-| 1,000   | 0.63ms     | 29.5ms      | 47×     |
-| 5,000   | 8.75ms     | 227.3ms     | 26×     |
-| 10,000  | 32.46ms    | 662.8ms     | 20×     |
-| 50,000  | 818.7ms    | 11.2s       | 14×     |
-
-## Notes
-
-- **Parallel Execution**: Enabled for n ≥ 1000 using Rayon.
-- Benchmarks use **Criterion** (Rust) and **pytest-benchmark** (Python).
-- Both use identical scenarios with reproducible RNG (seed=42).
-- Rust crate: `fastLowess` v0.3.0 (running on `lowess` v0.6.0 core).
-- Python: `statsmodels` v0.14.4 (with Cython backend).
-- Test date: 2025-12-23.
-
-## GPU vs CPU Backend Comparison
-
-The performance dynamics change significantly depending on the `delta` parameter.
-
-### Scenario A: Delta = 0 (Dense Computation)
-
-When calculating the regression at **every single point** (no interpolation), the CPU backend is surprisingly faster. This suggests the CPU's efficient memory access patterns and `rayon` parallelism outperform the GPU's raw compute when dealing with the massive memory traffic of O(N²) dense interactions.
-
-| Dataset Size | CPU Time    | GPU Time    | Winner | Speedup |
-|--------------|-------------|-------------|--------|---------|
-| 100,000      | 11.66 ms    | 82.94 ms    | CPU    | 7.1x    |
-| 250,000      | 40.47 ms    | 113.55 ms   | CPU    | 2.8x    |
-| 500,000      | 76.91 ms    | 151.44 ms   | CPU    | 1.96x   |
-| 1,000,000    | 140.56 ms   | 240.75 ms   | CPU    | 1.71x   |
-| 2,000,000    | 282.33 ms   | 546.97 ms   | CPU    | 1.93x   |
-
-### Scenario B: Delta = 0.01 (Optimized / Interpolated)
-
-When using the `delta` optimization, the **GPU becomes significantly faster**, scaling much better than the CPU at large sizes. This indicates the GPU implementation handles the "Anchor + Interpolate" logic more efficiently for large N.
-
-| Dataset Size | CPU Time    | GPU Time    | Winner | Speedup  |
-|--------------|-------------|-------------|--------|----------|
-| 100,000      | 51.80 ms    | 81.55 ms    | CPU    | 0.64x    |
-| 250,000      | 148.56 ms   | 109.60 ms   | **GPU**| **1.36x**|
-| 500,000      | 337.75 ms   | 172.59 ms   | **GPU**| **1.96x**|
-| 1,000,000    | 672.77 ms   | 381.48 ms   | **GPU**| **1.76x**|
-| 2,000,000    | 1,423.00 ms | 590.22 ms   | **GPU**| **2.41x**|
-
-### Recommendation
-
-- **For Standard Use (Delta ≈ 0)**: The `Backend::CPU` is generally faster and should be the default.
-- **For Large "Delta" Optimization**: If using a specific `delta` strategy that aligns with the GPU's strengths (as seen in Scenario B), the `Backend::GPU` offers superior scaling for very large datasets (> 250k points).
+- **Default**: Use **Rust CPU Parallel** for best all-around performance.
+- **High Throughput / No-Delta**: Consider **Rust GPU** if you specifically require exact `delta=0` calculations on large datasets, where it significantly outperforms the CPU.

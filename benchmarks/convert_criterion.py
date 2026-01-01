@@ -68,6 +68,7 @@ def find_criterion_results(criterion_dir: Path) -> Dict[str, List[dict]]:
             continue
         
         category = group_dir.name
+        
         if category not in results:
             results[category] = []
         
@@ -78,21 +79,20 @@ def find_criterion_results(criterion_dir: Path) -> Dict[str, List[dict]]:
             bench_id = bench_dir.name
             
             # Check if this has 'new/' directly (non-parameterized)
-            # or has parameter subdirectories
             new_dir = bench_dir / "new"
             if new_dir.exists() and (new_dir / "estimates.json").exists():
-                # Non-parameterized benchmark (e.g., pathological/clustered)
+                # Non-parameterized
                 timing = parse_estimates(new_dir / "estimates.json")
                 if timing:
                     result = {
                         "name": bench_id,
-                        "size": 5000,  # Default size for pathological
+                        "size": 5000,
                         "iterations": 10,
                         **timing
                     }
                     results[category].append(result)
             else:
-                # Parameterized benchmark - look for param subdirectories
+                # Parameterized benchmark
                 for param_dir in bench_dir.iterdir():
                     if not param_dir.is_dir() or param_dir.name in ("report", "new", "base", "change"):
                         continue
@@ -109,24 +109,9 @@ def find_criterion_results(criterion_dir: Path) -> Dict[str, List[dict]]:
                             except ValueError:
                                 size = 0
                             
-                            # Create aligned name: category_param (e.g., scale_1000)
-                            # Match Python naming convention
-                            if category == "scalability":
-                                name = f"scale_{param}"
-                            elif category == "financial":
-                                name = f"financial_{param}"
-                            elif category == "scientific":
-                                name = f"scientific_{param}"
-                            elif category == "genomic":
-                                name = f"genomic_{param}"
-                            elif category == "fraction":
-                                name = f"fraction_{param}"
-                            elif category == "iterations":
-                                name = f"iterations_{param}"
-                            elif category == "delta":
-                                name = f"delta_{param}"
-                            else:
-                                name = f"{bench_id}_{param}"
+                            # With updated benchmark.rs, bench_id is descriptive (e.g. "scale", "fraction")
+                            # We construct name as "{bench_id}_{param}"
+                            name = f"{bench_id}_{param}"
                             
                             result = {
                                 "name": name,
@@ -158,20 +143,60 @@ def main():
         print("No criterion results found. Run 'cargo bench' first.")
         return 1
     
-    # Write to output file
-    output_file = output_dir / "rust_benchmark.json"
-    with open(output_file, "w") as f:
-        json.dump(results, f, indent=2)
+    # Separate results into CPU, GPU, and CPU Serial
+    cpu_results = {}
+    gpu_results = {}
+    cpu_serial_results = {}
     
-    print(f"\nResults saved to: {output_file}")
-    
-    # Print summary
-    total_benchmarks = sum(len(v) for v in results.values())
-    print(f"\nExported {total_benchmarks} benchmarks across {len(results)} categories:")
-    for category, benchmarks in sorted(results.items()):
-        print(f"  {category}: {len(benchmarks)} benchmarks")
-        for b in benchmarks:
-            print(f"    - {b['name']}: {b['mean_time_ms']:.3f} ms")
+    for category, benchmarks in results.items():
+        # Clean category name and determine backend
+        if category.endswith("_gpu"):
+            clean_category = category[:-4]
+            target_dict = gpu_results
+        elif category.endswith("_cpu_serial"):
+            clean_category = category.replace("_cpu_serial", "")
+            target_dict = cpu_serial_results
+        elif category.endswith("_cpu"):
+            clean_category = category[:-4]
+            target_dict = cpu_results
+        else:
+            # Fallback for benchmarks without suffix (likely CPU default)
+            clean_category = category
+            target_dict = cpu_results
+            
+        if clean_category not in target_dict:
+            target_dict[clean_category] = []
+        target_dict[clean_category].extend(benchmarks)
+
+    # Helper to save results
+    def save_results(data, filename):
+        if not data:
+            return
+        output_path = output_dir / filename
+        with open(output_path, "w") as f:
+            json.dump(data, f, indent=2)
+        print(f"\nResults saved to: {output_path}")
+        
+        # Print summary
+        total = sum(len(v) for v in data.values())
+        print(f"Exported {total} benchmarks across {len(data)} categories:")
+        for cat, benches in sorted(data.items()):
+            print(f"  {cat}: {len(benches)} benchmarks")
+            for b in benches:
+                print(f"    - {b['name']}: {b['mean_time_ms']:.3f} ms")
+
+    # Save Results
+    if cpu_results:
+        print("\n--- CPU Results ---")
+        save_results(cpu_results, "rust_benchmark_cpu.json")
+        
+    if cpu_serial_results:
+        print("\n--- CPU Serial Results ---")
+        save_results(cpu_serial_results, "rust_benchmark_cpu_serial.json")
+        
+    if gpu_results:
+        print("\n--- GPU Results ---")
+        save_results(gpu_results, "rust_benchmark_gpu.json")
     
     return 0
 

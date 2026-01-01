@@ -8,11 +8,12 @@
 //!
 //! Run with: `cargo bench`
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use fastLowess::prelude::*;
-use ndarray::Array1;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use rand_distr::{Normal, Uniform};
+use std::env;
 use std::f64::consts::PI;
 use std::hint::black_box;
 
@@ -20,7 +21,6 @@ use std::hint::black_box;
 // Data Generation with Reproducible RNG
 // ============================================================================
 
-/// Generate smooth sinusoidal data with Gaussian noise.
 fn generate_sine_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let noise_dist = Normal::new(0.0, 0.2).unwrap();
@@ -33,7 +33,6 @@ fn generate_sine_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate data with outliers (5% of points are extreme).
 fn generate_outlier_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let noise_dist = Normal::new(0.0, 0.2).unwrap();
@@ -45,7 +44,6 @@ fn generate_outlier_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
         .map(|&xi| xi.sin() + noise_dist.sample(&mut rng))
         .collect();
 
-    // Add 5% outliers
     let n_outliers = size / 20;
     for _ in 0..n_outliers {
         let idx = rng.random_range(0..size);
@@ -54,13 +52,12 @@ fn generate_outlier_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate financial time series (trending with volatility).
 fn generate_financial_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
-    let returns_dist = Normal::new(0.0005, 0.02).unwrap(); // Daily returns
+    let returns_dist = Normal::new(0.0005, 0.02).unwrap();
 
     let x: Vec<f64> = (0..size).map(|i| i as f64).collect();
-    let mut y = vec![100.0]; // Starting price
+    let mut y = vec![100.0];
 
     for _ in 1..size {
         let ret = returns_dist.sample(&mut rng);
@@ -70,7 +67,6 @@ fn generate_financial_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate scientific measurement data (exponential decay with oscillations).
 fn generate_scientific_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let noise_dist = Normal::new(0.0, 0.05).unwrap();
@@ -86,12 +82,11 @@ fn generate_scientific_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate genomic methylation data (beta values between 0 and 1).
 fn generate_genomic_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let noise_dist = Normal::new(0.0, 0.1).unwrap();
 
-    let x: Vec<f64> = (0..size).map(|i| (i * 1000) as f64).collect(); // CpG positions
+    let x: Vec<f64> = (0..size).map(|i| (i * 1000) as f64).collect();
     let y: Vec<f64> = x
         .iter()
         .map(|&xi| {
@@ -102,7 +97,6 @@ fn generate_genomic_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate clustered x-values (groups with tiny spacing).
 fn generate_clustered_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let noise_dist = Normal::new(0.0, 0.1).unwrap();
@@ -117,10 +111,9 @@ fn generate_clustered_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     (x, y)
 }
 
-/// Generate high-noise data (SNR < 1).
 fn generate_high_noise_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
     let mut rng = StdRng::seed_from_u64(seed);
-    let noise_dist = Normal::new(0.0, 2.0).unwrap(); // High noise
+    let noise_dist = Normal::new(0.0, 2.0).unwrap();
 
     let x: Vec<f64> = (0..size).map(|i| i as f64 * 10.0 / size as f64).collect();
     let y: Vec<f64> = x
@@ -134,26 +127,41 @@ fn generate_high_noise_data(size: usize, seed: u64) -> (Vec<f64>, Vec<f64>) {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+fn get_config() -> (bool, bool, &'static str) {
+    match env::var("FASTLOWESS_BACKEND").ok().as_deref() {
+        Some("gpu") | Some("GPU") => (true, true, "gpu"),
+        Some("cpu_serial") => (false, false, "cpu_serial"),
+        _ => (false, true, "cpu"),
+    }
+}
+
+// ============================================================================
 // Benchmark Functions
 // ============================================================================
 
 fn bench_scalability(c: &mut Criterion) {
-    let mut group = c.benchmark_group("scalability");
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("scalability_{}", backend_name));
     group.sample_size(50);
-
+    // Reduced max size for CI stability locally if needed, but keeping original set
     for size in [1_000, 5_000, 10_000, 50_000, 100_000] {
         group.throughput(Throughput::Elements(size as u64));
 
         let (x, y) = generate_sine_data(size, 42);
 
-        // Parallel execution (fastLowess enhancement)
-        group.bench_with_input(BenchmarkId::new("parallel", size), &size, |b, _| {
+        group.bench_with_input(BenchmarkId::new("scale", size), &size, |b, _| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.1)
                     .iterations(3)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(size >= 1000)
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -165,20 +173,24 @@ fn bench_scalability(c: &mut Criterion) {
 }
 
 fn bench_fraction(c: &mut Criterion) {
-    let mut group = c.benchmark_group("fraction");
-    group.sample_size(100);
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("fraction_{}", backend_name));
+    group.sample_size(50); // Reduced to match loess-rs somewhat
 
     let size = 5000;
     let (x, y) = generate_sine_data(size, 42);
 
     for frac in [0.05, 0.1, 0.2, 0.3, 0.5, 0.67] {
-        group.bench_with_input(BenchmarkId::new("batch", frac), &frac, |b, &frac| {
+        group.bench_with_input(BenchmarkId::new("fraction", frac), &frac, |b, &frac| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(frac)
                     .iterations(3)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(true) // size is 5000
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -190,20 +202,24 @@ fn bench_fraction(c: &mut Criterion) {
 }
 
 fn bench_iterations(c: &mut Criterion) {
-    let mut group = c.benchmark_group("iterations");
-    group.sample_size(100);
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("iterations_{}", backend_name));
+    group.sample_size(50);
 
     let size = 5000;
     let (x, y) = generate_outlier_data(size, 42);
 
     for iter in [0, 1, 2, 3, 5, 10] {
-        group.bench_with_input(BenchmarkId::new("batch", iter), &iter, |b, &iter| {
+        group.bench_with_input(BenchmarkId::new("iterations", iter), &iter, |b, &iter| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.2)
                     .iterations(iter)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(true) // size is 5000
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -214,8 +230,10 @@ fn bench_iterations(c: &mut Criterion) {
     group.finish();
 }
 
+// Note: bench_delta is specific to loess-rs / modern impls, kept from user snippet
 fn bench_delta(c: &mut Criterion) {
-    let mut group = c.benchmark_group("delta");
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("delta_{}", backend_name));
     group.sample_size(50);
 
     let size = 10000;
@@ -229,14 +247,17 @@ fn bench_delta(c: &mut Criterion) {
     ];
 
     for (name, delta) in delta_configs {
-        group.bench_with_input(BenchmarkId::new("batch", name), &delta, |b, &delta| {
+        group.bench_with_input(BenchmarkId::new("delta", name), &delta, |b, &delta| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.2)
                     .iterations(2)
                     .delta(delta)
+                    .scaling_method(MAR)
+                    .backend(if use_gpu { GPU } else { CPU })
+                    .boundary_policy(NoBoundary)
                     .adapter(Batch)
-                    .parallel(true) // size is 10000
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -248,19 +269,23 @@ fn bench_delta(c: &mut Criterion) {
 }
 
 fn bench_financial(c: &mut Criterion) {
-    let mut group = c.benchmark_group("financial");
-    group.sample_size(100);
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("financial_{}", backend_name));
+    group.sample_size(50);
 
     for size in [500, 1000, 5000, 10000] {
         let (x, y) = generate_financial_data(size, 42);
 
-        group.bench_with_input(BenchmarkId::new("price_smoothing", size), &size, |b, _| {
+        group.bench_with_input(BenchmarkId::new("financial", size), &size, |b, _| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.1)
                     .iterations(2)
+                    .scaling_method(MAR)
+                    .backend(if use_gpu { GPU } else { CPU })
+                    .boundary_policy(NoBoundary)
                     .adapter(Batch)
-                    .parallel(size >= 1000)
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -272,19 +297,23 @@ fn bench_financial(c: &mut Criterion) {
 }
 
 fn bench_scientific(c: &mut Criterion) {
-    let mut group = c.benchmark_group("scientific");
-    group.sample_size(100);
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("scientific_{}", backend_name));
+    group.sample_size(50);
 
     for size in [500, 1000, 5000, 10000] {
         let (x, y) = generate_scientific_data(size, 42);
 
-        group.bench_with_input(BenchmarkId::new("spectroscopy", size), &size, |b, _| {
+        group.bench_with_input(BenchmarkId::new("scientific", size), &size, |b, _| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.15)
                     .iterations(3)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(size >= 1000)
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -296,20 +325,24 @@ fn bench_scientific(c: &mut Criterion) {
 }
 
 fn bench_genomic(c: &mut Criterion) {
-    let mut group = c.benchmark_group("genomic");
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("genomic_{}", backend_name));
     group.sample_size(50);
 
-    for size in [1000, 5000, 10000, 50000] {
+    for size in [1000, 5000, 10_000, 50_000] {
         let (x, y) = generate_genomic_data(size, 42);
 
-        group.bench_with_input(BenchmarkId::new("methylation", size), &size, |b, _| {
+        group.bench_with_input(BenchmarkId::new("genomic", size), &size, |b, _| {
             b.iter(|| {
                 Lowess::new()
                     .fraction(0.1)
                     .iterations(3)
                     .delta(100.0)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(size >= 1000)
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -321,7 +354,8 @@ fn bench_genomic(c: &mut Criterion) {
 }
 
 fn bench_pathological(c: &mut Criterion) {
-    let mut group = c.benchmark_group("pathological");
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("pathological_{}", backend_name));
     group.sample_size(50);
 
     let size = 5000;
@@ -333,8 +367,11 @@ fn bench_pathological(c: &mut Criterion) {
             Lowess::new()
                 .fraction(0.3)
                 .iterations(2)
+                .scaling_method(MAR)
+                .backend(if use_gpu { GPU } else { CPU })
+                .boundary_policy(NoBoundary)
                 .adapter(Batch)
-                .parallel(true) // size is 5000
+                .parallel(use_parallel)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_clustered), black_box(&y_clustered))
@@ -349,8 +386,11 @@ fn bench_pathological(c: &mut Criterion) {
             Lowess::new()
                 .fraction(0.5)
                 .iterations(5)
+                .scaling_method(MAR)
+                .backend(if use_gpu { GPU } else { CPU })
+                .boundary_policy(NoBoundary)
                 .adapter(Batch)
-                .parallel(true) // size is 5000
+                .parallel(use_parallel)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_noisy), black_box(&y_noisy))
@@ -365,8 +405,11 @@ fn bench_pathological(c: &mut Criterion) {
             Lowess::new()
                 .fraction(0.2)
                 .iterations(10)
+                .scaling_method(MAR)
+                .backend(if use_gpu { GPU } else { CPU })
+                .boundary_policy(NoBoundary)
                 .adapter(Batch)
-                .parallel(true) // size is 5000
+                .parallel(use_parallel)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_outlier), black_box(&y_outlier))
@@ -382,8 +425,11 @@ fn bench_pathological(c: &mut Criterion) {
             Lowess::new()
                 .fraction(0.2)
                 .iterations(2)
+                .scaling_method(MAR)
+                .backend(if use_gpu { GPU } else { CPU })
+                .boundary_policy(NoBoundary)
                 .adapter(Batch)
-                .parallel(true) // size is 5000
+                .parallel(use_parallel)
                 .build()
                 .unwrap()
                 .fit(black_box(&x_const), black_box(&y_const))
@@ -394,28 +440,27 @@ fn bench_pathological(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_weight_functions(c: &mut Criterion) {
-    let mut group = c.benchmark_group("weight_functions");
-    group.sample_size(100);
+fn bench_crossover(c: &mut Criterion) {
+    let (use_gpu, use_parallel, backend_name) = get_config();
+    let mut group = c.benchmark_group(format!("crossover_{}", backend_name));
+    group.sample_size(10); // Reduced sample size for large datasets
 
-    let size = 5000;
-    let (x, y) = generate_sine_data(size, 42);
+    let sizes = [100_000, 250_000, 500_000, 1_000_000, 2_000_000];
 
-    let weight_fns = [
-        ("tricube", Tricube),
-        ("gaussian", Gaussian),
-        ("epanechnikov", Epanechnikov),
-    ];
+    for size in sizes {
+        group.throughput(Throughput::Elements(size as u64));
+        let (x, y) = generate_sine_data(size, 42);
 
-    for (name, wf) in weight_fns {
-        group.bench_with_input(BenchmarkId::new("kernel", name), &wf, |b, &wf| {
+        group.bench_with_input(BenchmarkId::new("scale", size), &size, |b, _| {
             b.iter(|| {
                 Lowess::new()
-                    .fraction(0.2)
+                    .fraction(0.1)
                     .iterations(3)
-                    .weight_function(wf)
+                    .scaling_method(MAR)
+                    .boundary_policy(NoBoundary)
+                    .backend(if use_gpu { GPU } else { CPU })
                     .adapter(Batch)
-                    .parallel(true)
+                    .parallel(use_parallel)
                     .build()
                     .unwrap()
                     .fit(black_box(&x), black_box(&y))
@@ -423,33 +468,6 @@ fn bench_weight_functions(c: &mut Criterion) {
             })
         });
     }
-    group.finish();
-}
-
-fn bench_ndarray_integration(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ndarray");
-    group.sample_size(50);
-
-    let size = 10_000;
-    let (x_vec, y_vec) = generate_sine_data(size, 42);
-    let x_arr = Array1::from_vec(x_vec.clone());
-    let y_arr = Array1::from_vec(y_vec.clone());
-
-    group.throughput(Throughput::Elements(size as u64));
-
-    // Bench with Array1<f64> (ndarray)
-    group.bench_function("ndarray_input", |b| {
-        b.iter(|| {
-            Lowess::new()
-                .adapter(Batch)
-                .parallel(true)
-                .build()
-                .unwrap()
-                .fit(black_box(&x_arr), black_box(&y_arr))
-                .unwrap()
-        })
-    });
-
     group.finish();
 }
 
@@ -463,8 +481,7 @@ criterion_group!(
     bench_scientific,
     bench_genomic,
     bench_pathological,
-    bench_weight_functions,
-    bench_ndarray_integration,
+    bench_crossover,
 );
 
 criterion_main!(benches);

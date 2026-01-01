@@ -1,6 +1,6 @@
 [package]
 name = "fastLowess-benchmark"
-version = "0.2.2"
+version = "0.4.0"
 edition = "2024"
 publish = false
 
@@ -8,16 +8,8 @@ publish = false
 name = "benchmark"
 harness = false
 
-[[bench]]
-name = "benchmark_gpu"
-harness = false
-
-[[bench]]
-name = "crossover"
-harness = false
-
 [dependencies]
-fastLowess = { git = "https://github.com/thisisamirv/fastLowess", branch = "develop", features = [
+fastLowess = { path = "/home/av746/Desktop/GitHub/fastLowess", features = [
     "cpu",
     "gpu",
 ] }

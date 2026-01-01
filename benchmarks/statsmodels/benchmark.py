@@ -359,26 +359,7 @@ def benchmark_pathological(iterations: int = 10) -> List[BenchmarkResult]:
     return results
 
 
-def benchmark_weight_functions(iterations: int = 10) -> List[BenchmarkResult]:
-    """Benchmark with different weight functions (statsmodels only has tricube)."""
-    print("\n" + "=" * 80)
-    print("WEIGHT FUNCTIONS")
-    print("=" * 80)
-    
-    results = []
-    size = 5000
-    x, y = generate_sine_data(size, seed=42)
-    
-    # Statsmodels only supports tricube kernel
-    result = run_benchmark(
-        "tricube", size,
-        lambda: lowess(y, x, frac=0.2, it=3, return_sorted=False),
-        iterations
-    )
-    results.append(result)
-    print(f"  tricube: {result.mean_time_ms:.2f} ms ± {result.std_time_ms:.2f} ms")
-    
-    return results
+
 
 
 # ============================================================================
@@ -404,7 +385,7 @@ def main():
     all_results["scientific"] = benchmark_scientific(iterations)
     all_results["genomic"] = benchmark_genomic(iterations)
     all_results["pathological"] = benchmark_pathological(iterations)
-    all_results["weight_functions"] = benchmark_weight_functions(iterations)
+
     
     # Convert to JSON-serializable format
     output = {}
