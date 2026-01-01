@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added zero-allocation parallel fitting via `fit_all_points_parallel` using `for_each_init`.
 - Added parallel CV memory reuse via `cv_pass_parallel` using `map_init`.
 - Added refined delta optimization to `compute_anchor_points` and interpolate logic to skip redundant fits for tied x-values and copy previous values instead.
+- Added parallel anchor precomputation for large datasets (n > 100K) using chunk-and-merge strategy.
+- Added cache-oblivious tile-based processing in `fit_all_points_parallel` for large window sizes.
 
 ### Changed
 
