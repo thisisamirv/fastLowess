@@ -286,28 +286,27 @@
 //!
 //! ### Backend Comparison
 //!
-//! | Backend    | Use Case         | Features     | Limitations         |
-//! |------------|------------------|--------------|---------------------|
-//! | CPU        | General          | All features | None                |
-//! | GPU (beta) | High-performance | Very fast    | Only vanilla LOWESS |
+//! | Backend    | Use Case         | Features              | Limitations         |
+//! |------------|------------------|-----------------------|---------------------|
+//! | CPU        | General          | All features          | None                |
+//! | GPU (beta) | High-performance | Special circumstances | Only vanilla LOWESS |
 //!
-//! **GPU Backend Limitations**: The GPU backend is currently in **Beta** and is limited to vanilla LOWESS and does not support all features of the CPU backend:
+//! > [!WARNING]
+//! > **GPU Backend Limitations**: The GPU backend is currently in **Beta** and is limited to vanilla LOWESS and does not support all features of the CPU backend:
+//! >
+//! > - Only Tricube kernel function
+//! > - Only Bisquare robustness method
+//! > - Only Batch adapter
+//! > - No cross-validation
+//! > - No intervals
+//! > - No edge handling (bias at edges, original LOWESS behavior)
+//! > - No zero-weight fallback
+//! > - No diagnostics
+//! > - No streaming or online mode
 //!
-//! - Only Tricube kernel function
-//! - Only Bisquare robustness method
-//! - Only Batch adapter
-//! - No cross-validation
-//! - No intervals
-//! - No edge handling (bias at edges, original LOWESS behavior)
-//! - No zero-weight fallback
-//! - No diagnostics
-//! - No streaming or online mode
+//! 1. **CPU Backend (`Backend::CPU`)**: The default and recommended choice. It is faster for all standard dense computations, supports all features (cross-validation, intervals, etc.), and has zero setup overhead.
 //!
-//! **GPU vs CPU Precision**: Results from the GPU backend are not guaranteed to be identical to the CPU backend due to:
-//!
-//! - Different floating-point precision
-//! - No padding at the edges in the GPU backend
-//! - Different scale estimation methods (MAD in CPU, MAR in GPU)
+//! 2. **GPU Backend (`Backend::GPU`)**: Use **only** if you have a massive dataset (> 10 million points) **AND** you are using no or very small `delta` optimization (e.g., `delta(0.01)`). In this specific "sparse" scenario, the GPU scales better than the CPU. for dense computation, the CPU is still faster.
 //!
 //! ### Execution Mode (Adapter) Comparison
 //!
